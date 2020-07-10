@@ -2,4 +2,4 @@ module github.com/flowerinthenight/oops
 
 go 1.14
 
-require github.com/pkg/errors v0.9.1
+require gopkg.in/yaml.v2 v2.3.0

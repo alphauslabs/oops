@@ -1,0 +1,23 @@
+env:
+  key1: val1
+  key2: val2
+run:
+- http:
+    method: GET
+    url: "http://localhost:8080"
+    headers:
+      Authorization: |
+        #!/bin/bash
+        echo "Bearer $TOKEN"
+      Content-Type: application/json
+    body:
+    out: out.txt
+    asserts:
+    - hello
+    - |
+      #!/bin/bash
+      echo "hello"
+      exit 1
+
+asserts:
+- script
