@@ -9,14 +9,18 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type shell struct {
+	Shell string `yaml:"shell"`
+}
+
 type runhttp struct {
-	Method  string            `yaml:"method"`
-	Url     string            `yaml:"url"`
-	Headers map[string]string `yaml:"headers"`
-	Form    string            `yaml:"form"`
-	Body    string            `yaml:"body"`
-	Write   string            `yaml:"write"`
-	Asserts []string          `yaml:"asserts"`
+	Method         string            `yaml:"method"`
+	Url            string            `yaml:"url"`
+	Headers        map[string]string `yaml:"headers"`
+	QueryParams    string            `yaml:"query_params"`
+	RequestPayload string            `yaml:"request_payload"`
+	ResponseOut    string            `yaml:"response_out"`
+	Asserts        shell             `yaml:"asserts"`
 }
 
 type run struct {
@@ -26,7 +30,7 @@ type run struct {
 type test struct {
 	Env     map[string]string `yaml:"env"`
 	Run     []run             `yaml:"run"`
-	Asserts []string          `yaml:"asserts"`
+	Asserts shell             `yaml:"asserts"`
 }
 
 func main() {
@@ -55,7 +59,7 @@ func main() {
 
 	log.Printf("%+v", t)
 
-	d1 := []byte(t.Run[0].Http.Asserts[1])
+	d1 := []byte(t.Run[0].Http.Asserts.Shell)
 	err = ioutil.WriteFile("/tmp/dat1", d1, 0777)
 	c = exec.Command("sh", "-c", "/tmp/dat1")
 	c.Env = os.Environ()
