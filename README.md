@@ -15,6 +15,8 @@ env:
 run:
 - http:
     method: POST
+    # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_url
+    # Example: /tmp/scenario01.yaml_run0_url
     url: "https://service.alphaus.cloud/users"
     # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_hdr.<key>
     # Example: /tmp/scenario01.yaml_run0_hdr.Authorization
