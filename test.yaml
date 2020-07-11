@@ -10,18 +10,9 @@ run:
       Authorization: |
         #!/bin/bash
         echo -n "Bearer $(ccf token --login-url loginqa.mobingi.com/ripple --client-id "$OPENAPI_ID_QA" --client-secret $OPENAPI_SECRET_QA --grant-type client_credentials)"
-    # query_params:
-    #   key1: |
-    #     #!/bin/bash
-    #     echo -n "$KEY2"
-    #   key2: |
-    #     #!/bin/bash
-    #     echo -n "$KEY2"
-    # payload: |
-    #   {"key1":"value1","key2":"value2"}
     response_out: /tmp/out.txt
     asserts:
-      status_code: 201
+      status_code: 200
       shell: |
         #!/bin/bash
         if [[ "$(cat /tmp/out.txt | jq -r .username)" == "flower" ]]; then
