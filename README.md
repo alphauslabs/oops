@@ -13,7 +13,8 @@ env:
 # test, etc.
 # If supported, the filename of the script will be indicated below.
 
-# A list of http requests to perform sequentially.
+# A list of http requests to perform sequentially. This tool will continue running
+# all the list entries even if failure occurs during the execution.
 run:
 - http:
     method: POST
