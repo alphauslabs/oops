@@ -16,7 +16,7 @@ import (
 )
 
 type Asserts struct {
-	Code  int    `yaml:"code"`
+	Code  int    `yaml:"status_code"`
 	Shell string `yaml:"shell"`
 }
 
@@ -65,10 +65,12 @@ func (s *Scenario) ParseValue(contents string, file ...string) (string, error) {
 		if err != nil {
 			return contents, err
 		}
+
+		b, err := s.RunScript(f)
+		return string(b), err
 	}
 
-	b, err := s.RunScript(f)
-	return string(b), err
+	return contents, nil
 }
 
 func (s *Scenario) Write(file string, b []byte) error {
@@ -102,20 +104,30 @@ func doScenario(in *doScenarioInput) error {
 	for _, f := range in.ScenarioFiles {
 		yml, err := ioutil.ReadFile(f)
 		if err != nil {
-			return err
+			continue
 		}
 
 		var s Scenario
 		err = yaml.Unmarshal(yml, &s)
 		if err != nil {
-			return err
+			continue
 		}
 
 		for i, run := range s.Run {
 			prefix := filepath.Join(os.TempDir(), fmt.Sprintf("%v_run%d", f, i))
-			u, err := url.Parse(run.Http.Url)
+
+			// Parse url.
+			fn := fmt.Sprintf("%v_url", prefix)
+			nv, err := s.ParseValue(run.Http.Url, fn)
 			if err != nil {
-				break
+				log.Printf("url failed: %v", err)
+				continue
+			}
+
+			u, err := url.Parse(nv)
+			if err != nil {
+				log.Printf("url parse failed: %v", err)
+				continue
 			}
 
 			e := httpexpect.New(s, u.Scheme+"://"+u.Host)

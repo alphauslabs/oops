@@ -21,7 +21,7 @@ run:
     #   {"key1":"value1","key2":"value2"}
     response_out: /tmp/out.txt
     asserts:
-      code: 201
+      status_code: 201
       shell: |
         #!/bin/bash
         if [[ "$(cat /tmp/out.txt | jq -r .username)" == "flower" ]]; then
