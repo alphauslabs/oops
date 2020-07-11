@@ -42,6 +42,8 @@ run:
       # The expected http status code. Indicates a failure if not equal.
       code: 200
       # A non-zero return value indicates a failure.
+      # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_assertshell
+      # Example: /tmp/scenario01.yaml_run0_assertshell
       shell: |
         #!/bin/bash
         if [[ "$(cat /tmp/out.txt | jq -r .username)" == "user01" ]]; then
