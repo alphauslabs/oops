@@ -28,7 +28,9 @@ run:
     # and/or 'check'.
     response_out: /tmp/out.txt
     asserts:
+      # The expected http status code. Indicates a failure if not equal.
       code: 200
+      # A non-zero return value indicates a failure.
       shell: |
         #!/bin/bash
         if [[ "$(cat /tmp/out.txt | jq -r .username)" == "user01" ]]; then
@@ -36,6 +38,7 @@ run:
           exit 1
         fi
 
+# An optional script to run at the end. A non-zero return value indicates a failure.
 check: |
   #!/bin/bash
   echo "check"
