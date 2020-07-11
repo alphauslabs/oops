@@ -45,6 +45,7 @@ run:
     # file below. Useful if you want to refer to it under 'asserts.shell'
     # and/or 'check'.
     response_out: /tmp/out.txt
+    
     asserts:
       # The expected http status code. Indicates a failure if not equal.
       code: 200
