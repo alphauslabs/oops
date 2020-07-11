@@ -48,7 +48,7 @@ run:
     
     asserts:
       # The expected http status code. Indicates a failure if not equal.
-      code: 200
+      status_code: 200
       
       # A non-zero return value indicates a failure.
       # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_assertshell
