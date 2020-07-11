@@ -8,7 +8,9 @@ env:
   
 # Any value that starts with '#!/' (i.e. #!/bin/bash) will be written to disk as
 # an executable script file and the resulting output combined from stdout & stderr
-# will become the final evaluated value.
+# will become the final evaluated value. This is useful if you chain http calls,
+# such as, the url of the second test is from the payload response of the first
+# test, etc.
 # If supported, the filename of the script will be indicated below.
 
 # A list of http requests to perform sequentially.
