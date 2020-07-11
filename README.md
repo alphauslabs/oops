@@ -30,6 +30,8 @@ run:
       key2: |
         #!/bin/bash
         echo -n "$KEY2"
+    # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_payload
+    # Example: /tmp/scenario01.yaml_run0_payload
     payload: |
       {"key1":"value1","key2":"value2"}
     # If response payload is not empty, its contents will be written in the
