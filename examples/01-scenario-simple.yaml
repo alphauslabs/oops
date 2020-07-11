@@ -3,7 +3,7 @@ run:
     method: GET
     url: "https://api.github.com/licenses"
     headers:
-      Authorization: "Accept: application/vnd.github.v3+json"
+      Accept: "application/vnd.github.v3+json"
     response_out: /tmp/licenses.json
     asserts:
       status_code: 200

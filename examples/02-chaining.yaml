@@ -3,7 +3,7 @@ run:
     method: GET
     url: "https://api.github.com/licenses"
     headers:
-      Authorization: "Accept: application/vnd.github.v3+json"
+      Accept: "application/vnd.github.v3+json"
     response_out: /tmp/licenses.json
     asserts:
       status_code: 200
@@ -14,7 +14,7 @@ run:
       #!/bin/bash
       echo -n "$(cat /tmp/licenses.json | jq -r '.[] | select(.key == "unlicense") | .url')"
     headers:
-      Authorization: "Accept: application/vnd.github.v3+json"
+      Accept: "application/vnd.github.v3+json"
     response_out: /tmp/unlicense.json
     asserts:
       status_code: 200
