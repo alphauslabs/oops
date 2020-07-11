@@ -1,6 +1,6 @@
 env:
-  key1: val1
-  key2: val2
+  KEY1: val1
+  KEY2: val2
 run:
 - http:
     method: GET
@@ -18,6 +18,7 @@ run:
     asserts:
       shell: |
         #!/bin/bash
+        echo "$KEY1"
         echo "Bearer $(ccf token --login-url logindev.mobingi.com/ripple --username $MOBINGI_RIPPLE_USERNAME --password $MOBINGI_RIPPLE_PASSWORD --client-id $MOBINGI_RIPPLE_OPENID_WEB_CLIENT_ID --client-secret $MOBINGI_RIPPLE_OPENID_WEB_CLIENT_SECRET)"
 - http:
     method: GET

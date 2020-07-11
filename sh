@@ -1,1 +1,0 @@
-lsdy WAVE_MSP --region $AWS_REGION --key $AWS_ACCESS_KEY_ID_ASSUME_PROD --secret $AWS_SECRET_ACCESS_KEY_ASSUME_PROD --rolearn $ROLE_ARN_PROD --maxlen 50 --attr msp_id,company_name --nosort --noborder | grep -i 'jmas' | awk '{printf "%s",$1}' 

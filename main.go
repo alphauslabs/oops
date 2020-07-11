@@ -1,11 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
+	uuid "github.com/satori/go.uuid"
 	"gopkg.in/yaml.v2"
 )
 
@@ -27,46 +31,69 @@ type run struct {
 	Http runhttp `yaml:"http"`
 }
 
-type test struct {
+type scenario struct {
 	Env     map[string]string `yaml:"env"`
 	Run     []run             `yaml:"run"`
 	Asserts shell             `yaml:"asserts"`
+}
+
+func (s *scenario) RunScript(file string) ([]byte, error) {
+	c := exec.Command("sh", "-c", file)
+	c.Env = os.Environ()
+	if len(s.Env) > 0 {
+		for k, v := range s.Env {
+			add := fmt.Sprintf("%v=%v", k, v)
+			c.Env = append(c.Env, add)
+		}
+	}
+
+	return c.CombinedOutput()
+}
+
+func (s *scenario) ParseValue(v string) string {
+	if !strings.HasPrefix(v, "#!/") {
+		return v
+	}
+
+	f := func() string {
+		n := filepath.Join(os.TempDir(), fmt.Sprintf("%v.sh", uuid.NewV4()))
+		f, err := os.Create(n)
+		if err != nil {
+			return ""
+		}
+
+		defer f.Close()
+		f.Chmod(os.ModePerm)
+		f.Write([]byte(v))
+		f.Sync()
+		return n
+	}()
+
+	if f == "" {
+		return v
+	}
+
+	b, _ := s.RunScript(f)
+	return string(b)
 }
 
 func main() {
 	log.SetFlags(0)
 	log.SetOutput(os.Stdout)
 
-	c := exec.Command("sh", "-c", "/home/f14t/gopath/src/github.com/flowerinthenight/oops/sh")
-	c.Env = os.Environ()
-	b, err := c.CombinedOutput()
-	if err != nil {
-		log.Println(err)
-	}
-
-	log.Printf("%v <-- val", string(b))
-
-	yamlFile, err := ioutil.ReadFile("/home/f14t/gopath/src/github.com/flowerinthenight/oops/test.yaml")
+	yml, err := ioutil.ReadFile("/home/f14t/gopath/src/github.com/flowerinthenight/oops/test.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	var t test
-	err = yaml.Unmarshal(yamlFile, &t)
+	var s scenario
+	err = yaml.Unmarshal(yml, &s)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf("%+v", t)
-
-	d1 := []byte(t.Run[0].Http.Asserts.Shell)
-	err = ioutil.WriteFile("/tmp/dat1", d1, 0777)
-	c = exec.Command("sh", "-c", "/tmp/dat1")
-	c.Env = os.Environ()
-	b, err = c.CombinedOutput()
-	if err != nil {
-		log.Printf("failed: %v", err)
+	log.Printf("%+v", s)
+	for _, run := range s.Run {
+		log.Printf("val=%v", s.ParseValue(run.Http.Asserts.Shell))
 	}
-
-	log.Printf("%v", string(b))
 }
