@@ -166,7 +166,9 @@ func doScenario(in *doScenarioInput) error {
 				if err != nil {
 					log.Printf("[error] asserts.shell: %v: %v", err, string(s))
 				} else {
-					log.Printf("asserts.shell: %v", string(s))
+					if len(string(s)) > 0 {
+						log.Printf("asserts.shell: %v", string(s))
+					}
 				}
 			}
 		}
@@ -178,7 +180,9 @@ func doScenario(in *doScenarioInput) error {
 			if err != nil {
 				log.Printf("[error] check: %v: %v", err, string(s))
 			} else {
-				log.Printf("check: %v", string(s))
+				if len(string(s)) > 0 {
+					log.Printf("check: %v", string(s))
+				}
 			}
 		}
 	}

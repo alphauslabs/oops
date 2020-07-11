@@ -24,7 +24,10 @@ run:
       code: 201
       shell: |
         #!/bin/bash
-        cat /tmp/out.txt | jq -r .username
+        if [[ "$(cat /tmp/out.txt | jq -r .username)" == "flower" ]]; then
+          echo "try fail"
+          exit 1
+        fi
 
 check: |
   #!/bin/bash
