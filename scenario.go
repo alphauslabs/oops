@@ -110,75 +110,78 @@ func (s Scenario) Logf(fmt string, args ...interface{})       { log.Printf(fmt, 
 func (s Scenario) Errorf(message string, args ...interface{}) { log.Printf(message, args...) }
 
 type doScenarioInput struct {
-	ScenarioFile string
+	ScenarioFiles []string
+	Verbose       bool
 }
 
 func doScenario(in *doScenarioInput) error {
-	yml, err := ioutil.ReadFile(in.ScenarioFile)
-	if err != nil {
-		return err
-	}
-
-	var s Scenario
-	err = yaml.Unmarshal(yml, &s)
-	if err != nil {
-		return err
-	}
-
-	for _, run := range s.Run {
-		u, err := url.Parse(run.Http.Url)
+	for _, f := range in.ScenarioFiles {
+		yml, err := ioutil.ReadFile(f)
 		if err != nil {
-			break
+			return err
 		}
 
-		e := httpexpect.New(s, u.Scheme+"://"+u.Host)
-		req := e.Request(run.Http.Method, u.Path)
-		for k, v := range run.Http.Headers {
-			nv, _ := s.ParseValue(v)
-			req = req.WithHeader(k, nv)
-			log.Printf("[header] %v: %v", k, nv)
+		var s Scenario
+		err = yaml.Unmarshal(yml, &s)
+		if err != nil {
+			return err
 		}
 
-		for k, v := range run.Http.QueryParams {
-			nv, _ := s.ParseValue(v)
-			req = req.WithQuery(k, nv)
-		}
-
-		if run.Http.Payload != "" {
-			nv, _ := s.ParseValue(run.Http.Payload)
-			req = req.WithBytes([]byte(nv))
-		}
-
-		resp := req.Expect()
-		if run.Http.ResponseOut != "" {
-			body := resp.Body().Raw()
-			s.Write(run.Http.ResponseOut, []byte(body))
-			log.Printf("[response] %v", body)
-		}
-
-		if run.Http.Asserts == nil {
-			continue
-		}
-
-		code := resp.Raw().StatusCode
-		if code != run.Http.Asserts.Code {
-			log.Printf("[error] asserts.code=%v, expected=%v", code, run.Http.Asserts.Code)
-		}
-
-		if run.Http.Asserts.Shell != "" {
-			f, _ := s.WriteScript(run.Http.Asserts.Shell)
-			s, err := s.RunScript(f)
+		for _, run := range s.Run {
+			u, err := url.Parse(run.Http.Url)
 			if err != nil {
-				log.Printf("[error] asserts.shell: %v: %v", err, string(s))
+				break
+			}
+
+			e := httpexpect.New(s, u.Scheme+"://"+u.Host)
+			req := e.Request(run.Http.Method, u.Path)
+			for k, v := range run.Http.Headers {
+				nv, _ := s.ParseValue(v)
+				req = req.WithHeader(k, nv)
+				log.Printf("[header] %v: %v", k, nv)
+			}
+
+			for k, v := range run.Http.QueryParams {
+				nv, _ := s.ParseValue(v)
+				req = req.WithQuery(k, nv)
+			}
+
+			if run.Http.Payload != "" {
+				nv, _ := s.ParseValue(run.Http.Payload)
+				req = req.WithBytes([]byte(nv))
+			}
+
+			resp := req.Expect()
+			if run.Http.ResponseOut != "" {
+				body := resp.Body().Raw()
+				s.Write(run.Http.ResponseOut, []byte(body))
+				log.Printf("[response] %v", body)
+			}
+
+			if run.Http.Asserts == nil {
+				continue
+			}
+
+			code := resp.Raw().StatusCode
+			if code != run.Http.Asserts.Code {
+				log.Printf("[error] asserts.code=%v, expected=%v", code, run.Http.Asserts.Code)
+			}
+
+			if run.Http.Asserts.Shell != "" {
+				f, _ := s.WriteScript(run.Http.Asserts.Shell)
+				s, err := s.RunScript(f)
+				if err != nil {
+					log.Printf("[error] asserts.shell: %v: %v", err, string(s))
+				}
 			}
 		}
-	}
 
-	if s.Check != "" {
-		f, _ := s.WriteScript(s.Check)
-		s, err := s.RunScript(f)
-		if err != nil {
-			log.Printf("[error] check: %v: %v", err, string(s))
+		if s.Check != "" {
+			f, _ := s.WriteScript(s.Check)
+			s, err := s.RunScript(f)
+			if err != nil {
+				log.Printf("[error] check: %v: %v", err, string(s))
+			}
 		}
 	}
 

@@ -19,12 +19,15 @@ var (
 		RunE:  runE,
 	}
 
-	file  string
-	debug bool
+	files   []string
+	verbose bool
 )
 
 func runE(cmd *cobra.Command, args []string) error {
-	return doScenario(&doScenarioInput{ScenarioFile: file})
+	return doScenario(&doScenarioInput{
+		ScenarioFiles: files,
+		Verbose:       verbose,
+	})
 }
 
 func run(ctx context.Context, done chan error) {
@@ -63,8 +66,8 @@ func runCmd() *cobra.Command {
 }
 
 func init() {
-	rootcmd.PersistentFlags().BoolVar(&debug, "debug", debug, "enable debug mode")
-	rootcmd.Flags().StringVar(&file, "file", file, "scenario file to run (yaml)")
+	rootcmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", verbose, "verbose mode")
+	rootcmd.Flags().StringSliceVarP(&files, "scenarios", "s", files, "scenario file[s] to run, comma-separated, or multiple -s")
 	rootcmd.AddCommand(runCmd())
 }
 
