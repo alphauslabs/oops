@@ -15,9 +15,11 @@ env:
 run:
 - http:
     method: POST
+    
     # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_url
     # Example: /tmp/scenario01.yaml_run0_url
     url: "https://service.alphaus.cloud/users"
+    
     # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_hdr.<key>
     # Example: /tmp/scenario01.yaml_run0_hdr.Authorization
     headers:
@@ -25,6 +27,7 @@ run:
         #!/bin/bash
         echo -n "Bearer $TOKEN"
       Content-Type: application/json
+      
     # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_qparams.<key>
     # Example: /tmp/scenario01.yaml_run0_qparams.key1
     query_params:
@@ -32,10 +35,12 @@ run:
       key2: |
         #!/bin/bash
         echo -n "$KEY2"
+        
     # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_payload
     # Example: /tmp/scenario01.yaml_run0_payload
     payload: |
       {"key1":"value1","key2":"value2"}
+      
     # If response payload is not empty, its contents will be written in the
     # file below. Useful if you want to refer to it under 'asserts.shell'
     # and/or 'check'.
@@ -43,6 +48,7 @@ run:
     asserts:
       # The expected http status code. Indicates a failure if not equal.
       code: 200
+      
       # A non-zero return value indicates a failure.
       # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_assertshell
       # Example: /tmp/scenario01.yaml_run0_assertshell
