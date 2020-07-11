@@ -114,7 +114,8 @@ func doScenario(in *doScenarioInput) error {
 		}
 
 		for i, run := range s.Run {
-			prefix := filepath.Join(os.TempDir(), fmt.Sprintf("%v_run%d", f, i))
+			basef := filepath.Base(f)
+			prefix := filepath.Join(os.TempDir(), fmt.Sprintf("%v_run%d", basef, i))
 
 			// Parse url.
 			fn := fmt.Sprintf("%v_url", prefix)
@@ -186,7 +187,8 @@ func doScenario(in *doScenarioInput) error {
 		}
 
 		if s.Check != "" {
-			fn := filepath.Join(os.TempDir(), fmt.Sprintf("%v_check", f))
+			basef := filepath.Base(f)
+			fn := filepath.Join(os.TempDir(), fmt.Sprintf("%v_check", basef))
 			fn, _ = s.WriteScript(fn, s.Check)
 			s, err := s.RunScript(fn)
 			if err != nil {

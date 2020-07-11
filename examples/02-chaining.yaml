@@ -1,0 +1,29 @@
+run:
+- http:
+    method: GET
+    url: "https://api.github.com/licenses"
+    headers:
+      Authorization: "Accept: application/vnd.github.v3+json"
+    response_out: /tmp/licenses.json
+    asserts:
+      status_code: 200
+
+- http:
+    method: GET
+    url: |
+      #!/bin/bash
+      echo -n "$(cat /tmp/licenses.json | jq -r '.[] | select(.key == "unlicense") | .url')"
+    headers:
+      Authorization: "Accept: application/vnd.github.v3+json"
+    response_out: /tmp/unlicense.json
+    asserts:
+      status_code: 200
+      shell: |
+        #!/bin/bash
+        cat /tmp/unlicense.json | jq
+
+# Let's cleanup the files.
+check: |
+  #!/bin/bash
+  file /tmp/licenses.json && rm /tmp/licenses.json
+  file /tmp/unlicense.json && rm /tmp/unlicense.json
