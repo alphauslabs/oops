@@ -34,16 +34,12 @@ type Run struct {
 	Http RunHttp `yaml:"http"`
 }
 
-type Config struct {
-	WorkDir string `yaml:"workdir"`
-	Debug   bool   `yaml:"debug"`
-}
-
 type Scenario struct {
-	Env    map[string]string `yaml:"env"`
-	Config *Config           `yaml:"config"`
-	Run    []Run             `yaml:"run"`
-	Check  string            `yaml:"check"`
+	Env   map[string]string `yaml:"env"`
+	Run   []Run             `yaml:"run"`
+	Check string            `yaml:"check"`
+
+	workDir string
 }
 
 func (s *Scenario) RunScript(file string) ([]byte, error) {
@@ -78,7 +74,7 @@ func (s *Scenario) ParseValue(v string) (string, error) {
 }
 
 func (s *Scenario) WorkDir() string {
-	dir := s.Config.WorkDir
+	dir := s.workDir
 	if dir == "" {
 		dir = os.TempDir()
 	}
@@ -111,6 +107,7 @@ func (s Scenario) Errorf(message string, args ...interface{}) { log.Printf(messa
 
 type doScenarioInput struct {
 	ScenarioFiles []string
+	WorkDir       string
 	Verbose       bool
 }
 
@@ -127,6 +124,7 @@ func doScenario(in *doScenarioInput) error {
 			return err
 		}
 
+		s.workDir = in.WorkDir
 		for _, run := range s.Run {
 			u, err := url.Parse(run.Http.Url)
 			if err != nil {

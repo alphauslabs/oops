@@ -2,9 +2,6 @@ env:
   KEY1: hello
   KEY2: world
 
-config:
-  workdir:
-
 run:
 - http:
     method: GET
