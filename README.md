@@ -15,9 +15,7 @@ run:
         #!/bin/bash
         echo -n "Bearer $TOKEN"
     query_params:
-      key1: |
-        #!/bin/bash
-        echo -n "$KEY2"
+      key1: value1  
       key2: |
         #!/bin/bash
         echo -n "$KEY2"
@@ -36,5 +34,4 @@ run:
 check: |
   #!/bin/bash
   echo "check"
-  exit 1
 ```
