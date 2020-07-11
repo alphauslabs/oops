@@ -9,12 +9,15 @@ env:
 # Any value that starts with '#!/' (i.e. #!/bin/bash) will be written to disk as
 # an executable script file and the resulting output combined from stdout & stderr
 # will become the final evaluated value.
+# If supported, the filename of the script will be indicated below.
 
 # A list of http requests to perform sequentially.
 run:
 - http:
     method: POST
     url: "https://service.alphaus.cloud/users"
+    # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_hdr.<key>
+    # Example: /tmp/scenario01.yaml_run0_hdr.Authorization
     headers:
       Authorization: |
         #!/bin/bash
