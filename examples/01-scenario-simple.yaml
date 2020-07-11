@@ -9,6 +9,4 @@ run:
       status_code: 200
       shell: |
         #!/bin/bash
-        # cat /tmp/licenses.json | jq
-        cat /tmp/licenses.json | jq -r '.[] | select(.key == "unlicense") | .url'
-
+        cat /tmp/licenses.json | jq
