@@ -23,6 +23,8 @@ run:
         #!/bin/bash
         echo -n "Bearer $TOKEN"
       Content-Type: application/json
+    # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_qparams.<key>
+    # Example: /tmp/scenario01.yaml_run0_qparams.key1
     query_params:
       key1: value1  
       key2: |
