@@ -8,12 +8,13 @@ env:
 
 run:
 - http:
-    method: GET
-    url: "https://serviceqa.mobingi.com/m/u/me"
+    method: POST
+    url: "https://service.alphaus.cloud/users"
     headers:
       Authorization: |
         #!/bin/bash
         echo -n "Bearer $TOKEN"
+      Content-Type: application/json
     query_params:
       key1: value1  
       key2: |
@@ -21,6 +22,9 @@ run:
         echo -n "$KEY2"
     payload: |
       {"key1":"value1","key2":"value2"}
+    # If response payload is not empty, its contents will be written in the
+    # file below. Useful if you want to refer to it under 'asserts.shell'
+    # and/or 'check'.
     response_out: /tmp/out.txt
     asserts:
       code: 200
