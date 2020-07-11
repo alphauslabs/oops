@@ -62,7 +62,8 @@ run:
           exit 1
         fi
 
-# A script to run after 'run', if present. A non-zero return value indicates a failure.
+# A script to run after 'run', if present. Useful also as a standalone script
+# in itself, if 'run' is empty. A non-zero return value indicates a failure.
 check: |
   #!/bin/bash
   echo "check"
