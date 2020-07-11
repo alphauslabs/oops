@@ -51,7 +51,7 @@ run:
           exit 1
         fi
 
-# An optional script to run at the end. A non-zero return value indicates a failure.
+# A script to run after 'run', if present. A non-zero return value indicates a failure.
 check: |
   #!/bin/bash
   echo "check"
