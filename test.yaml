@@ -4,7 +4,6 @@ env:
 
 config:
   workdir:
-  debug: true
 
 run:
 - http:
