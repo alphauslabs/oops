@@ -6,8 +6,8 @@ env:
   ENV_KEY1: value1
   ENV_KEY2: value2
 
-run:
 # A list of http requests to perform sequentially.
+run:
 - http:
     method: POST
     url: "https://service.alphaus.cloud/users"
