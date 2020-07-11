@@ -3,7 +3,7 @@ env:
   KEY2: world
 
 config:
-  continue_on_error: true
+  workdir:
 
 run:
 - http:
@@ -13,41 +13,23 @@ run:
       Authorization: |
         #!/bin/bash
         echo -n "Bearer $(ccf token --login-url loginqa.mobingi.com/ripple --client-id "$OPENAPI_ID_QA" --client-secret $OPENAPI_SECRET_QA --grant-type client_credentials)"
-    query_params:
-      key1: val1
-      key2: |
-        #!/bin/bash
-        echo "$KEY2"
-    request_payload: |
-        {
-           "key1": "value1",
-           "key2": "value2"
-        }
+    # query_params:
+    #   key1: |
+    #     #!/bin/bash
+    #     echo -n "$KEY2"
+    #   key2: |
+    #     #!/bin/bash
+    #     echo -n "$KEY2"
+    # payload: |
+    #   {"key1":"value1","key2":"value2"}
     response_out: out.txt
     asserts:
-      code: 200
+      code: 201
       shell: |
         #!/bin/bash
-        echo "Bearer $(ccf token --login-url logindev.mobingi.com/ripple --username $MOBINGI_RIPPLE_USERNAME --password $MOBINGI_RIPPLE_PASSWORD --client-id $MOBINGI_RIPPLE_OPENID_WEB_CLIENT_ID --client-secret $MOBINGI_RIPPLE_OPENID_WEB_CLIENT_SECRET)"
-- http:
-    method: GET
-    url: "http://localhost:8080"
-    headers:
-      Authorization: |
-        #!/bin/bash
-        echo "Bearer <token>"
-      Content-Type: application/json
-    query_params:
-    request_payload: |
-        #!/bin/bash
-        echo "Bearer <token>"
-    response_out: out.txt
-    asserts:
-      shell: |
-        #!/bin/bash
-        echo "$KEY1"
+        exit 1
 
-asserts:
-  shell: |
-    #!/bin/bash
-    echo "shell"
+check: |
+  #!/bin/bash
+  echo "shell"
+  exit 1

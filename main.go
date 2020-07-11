@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -16,32 +15,37 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type asserts struct {
+type Asserts struct {
 	Code  int    `yaml:"code"`
 	Shell string `yaml:"shell"`
 }
 
-type runhttp struct {
-	Method         string            `yaml:"method"`
-	Url            string            `yaml:"url"`
-	Headers        map[string]string `yaml:"headers"`
-	QueryParams    map[string]string `yaml:"query_params"`
-	RequestPayload string            `yaml:"request_payload"`
-	ResponseOut    string            `yaml:"response_out"`
-	Asserts        asserts           `yaml:"asserts"`
+type RunHttp struct {
+	Method      string            `yaml:"method"`
+	Url         string            `yaml:"url"`
+	Headers     map[string]string `yaml:"headers"`
+	QueryParams map[string]string `yaml:"query_params"`
+	Payload     string            `yaml:"payload"`
+	ResponseOut string            `yaml:"response_out"`
+	Asserts     *Asserts          `yaml:"asserts"`
 }
 
-type run struct {
-	Http runhttp `yaml:"http"`
+type Run struct {
+	Http RunHttp `yaml:"http"`
 }
 
-type scenario struct {
-	Env     map[string]string `yaml:"env"`
-	Run     []run             `yaml:"run"`
-	Asserts asserts           `yaml:"asserts"`
+type Config struct {
+	WorkDir string `yaml:"workdir"`
 }
 
-func (s *scenario) RunScript(file string) ([]byte, error) {
+type Scenario struct {
+	Env    map[string]string `yaml:"env"`
+	Config *Config           `yaml:"config"`
+	Run    []Run             `yaml:"run"`
+	Check  string            `yaml:"check"`
+}
+
+func (s *Scenario) RunScript(file string) ([]byte, error) {
 	c := exec.Command("sh", "-c", file)
 	c.Env = os.Environ()
 	if len(s.Env) > 0 {
@@ -54,62 +58,55 @@ func (s *scenario) RunScript(file string) ([]byte, error) {
 	return c.CombinedOutput()
 }
 
-func (s *scenario) ParseValue(v string) string {
-	f := func() string {
-		var n string
-		if strings.HasPrefix(v, "#!/") {
-			n = filepath.Join(os.TempDir(), fmt.Sprintf("%v.sh", uuid.NewV4()))
-			f, err := os.Create(n)
-			if err != nil {
-				return ""
-			}
-
-			defer f.Close()
-			f.Chmod(os.ModePerm)
-			f.Write([]byte(v))
-			f.Sync()
+func (s *Scenario) ParseValue(v string) (string, error) {
+	var f string
+	var err error
+	if strings.HasPrefix(v, "#!/") {
+		f, err = s.WriteScript(v)
+		if err != nil {
+			return v, err
 		}
-
-		return n
-	}()
-
-	if f == "" {
-		return v
 	}
 
-	b, _ := s.RunScript(f)
-	return string(b)
+	if f == "" {
+		return v, nil
+	}
+
+	b, err := s.RunScript(f)
+	return string(b), err
 }
 
-// Logger is used as output backend for Printer.
-// testing.TB implements this interface.
-type Logger interface {
-	// Logf writes message to log.
-	Logf(fmt string, args ...interface{})
+func (s *Scenario) WorkDir() string {
+	dir := s.Config.WorkDir
+	if dir == "" {
+		dir = os.TempDir()
+	}
+
+	return dir
 }
 
-// Reporter is used to report failures.
-// testing.TB, AssertReporter, and RequireReporter implement this interface.
-type Reporter interface {
-	// Errorf reports failure.
-	// Allowed to return normally or terminate test using t.FailNow().
-	Errorf(message string, args ...interface{})
+func (s *Scenario) Write(f string, b []byte) error {
+	f = filepath.Join(s.WorkDir(), f)
+	return ioutil.WriteFile(f, b, 0644)
 }
 
-// LoggerReporter combines Logger and Reporter interfaces.
-type LoggerReporter interface {
-	Logger
-	Reporter
+func (s *Scenario) WriteScript(v string) (string, error) {
+	n := filepath.Join(s.WorkDir(), fmt.Sprintf("%v.sh", uuid.NewV4()))
+	f, err := os.Create(n)
+	if err != nil {
+		return "", err
+	}
+
+	defer f.Close()
+	f.Chmod(os.ModePerm)
+	f.Write([]byte(v))
+	f.Sync()
+	return n, nil
 }
 
-type rep struct{}
-
-func (r rep) Logf(fmt string, args ...interface{}) {
-	log.Printf(fmt, args...)
-}
-func (r rep) Errorf(message string, args ...interface{}) {
-	log.Printf(message, args...)
-}
+// LoggerReporter interface for httpexpect.
+func (s Scenario) Logf(fmt string, args ...interface{})       { log.Printf(fmt, args...) }
+func (s Scenario) Errorf(message string, args ...interface{}) { log.Printf(message, args...) }
 
 func main() {
 	log.SetFlags(0)
@@ -120,37 +117,67 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var s scenario
+	var s Scenario
 	err = yaml.Unmarshal(yml, &s)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf("%+v", s)
-	errrep := rep{}
+	// log.Printf("%+v", s)
+
 	for _, run := range s.Run {
 		u, err := url.Parse(run.Http.Url)
 		if err != nil {
-			panic(err)
+			break
 		}
 
-		e := httpexpect.New(errrep, u.Scheme+"://"+u.Host)
-		switch run.Http.Method {
-		case http.MethodGet:
-			req := e.GET(u.Path)
-			for k, v := range run.Http.Headers {
-				nv := s.ParseValue(v)
-				log.Printf("%v = %v", k, nv)
-				req = req.WithHeader(k, s.ParseValue(v))
-			}
-
-			for k, v := range run.Http.QueryParams {
-				req = req.WithQuery(k, s.ParseValue(v))
-			}
-
-			req.Expect()
+		e := httpexpect.New(s, u.Scheme+"://"+u.Host)
+		req := e.Request(run.Http.Method, u.Path)
+		for k, v := range run.Http.Headers {
+			nv, _ := s.ParseValue(v)
+			req = req.WithHeader(k, nv)
+			log.Printf("[header] %v: %v", k, nv)
 		}
 
-		log.Printf("val=%v", s.ParseValue(run.Http.Asserts.Shell))
+		for k, v := range run.Http.QueryParams {
+			nv, _ := s.ParseValue(v)
+			req = req.WithQuery(k, nv)
+		}
+
+		if run.Http.Payload != "" {
+			nv, _ := s.ParseValue(run.Http.Payload)
+			req = req.WithBytes([]byte(nv))
+		}
+
+		resp := req.Expect()
+		if run.Http.ResponseOut != "" {
+			body := resp.Body().Raw()
+			s.Write(run.Http.ResponseOut, []byte(body))
+			log.Printf("[response] %v", body)
+		}
+
+		if run.Http.Asserts == nil {
+			continue
+		}
+
+		if resp.Raw().StatusCode != run.Http.Asserts.Code {
+			log.Printf("[error] code=%v, expected=%v", resp.Raw().StatusCode, run.Http.Asserts.Code)
+		}
+
+		if run.Http.Asserts.Shell != "" {
+			f, _ := s.WriteScript(run.Http.Asserts.Shell)
+			s, err := s.RunScript(f)
+			if err != nil {
+				log.Printf("[error] shell: %v: %v", err, string(s))
+			}
+		}
+	}
+
+	if s.Check != "" {
+		f, _ := s.WriteScript(s.Check)
+		s, err := s.RunScript(f)
+		if err != nil {
+			log.Printf("[error] check: %v: %v", err, string(s))
+		}
 	}
 }
