@@ -46,7 +46,7 @@ run:
       # Example: /tmp/scenario01.yaml_run0_assertshell
       shell: |
         #!/bin/bash
-        if [[ "$(cat /tmp/out.txt | jq -r .username)" == "user01" ]]; then
+        if [[ "$(cat /tmp/out.txt | jq -r .username)" != "user01" ]]; then
           echo "try fail"
           exit 1
         fi
