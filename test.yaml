@@ -19,14 +19,14 @@ run:
     #     echo -n "$KEY2"
     # payload: |
     #   {"key1":"value1","key2":"value2"}
-    response_out: out.txt
+    response_out: /tmp/out.txt
     asserts:
       code: 201
       shell: |
         #!/bin/bash
-        exit 1
+        cat /tmp/out.txt | jq -r .username
 
 check: |
   #!/bin/bash
-  echo "shell"
+  echo "check"
   exit 1

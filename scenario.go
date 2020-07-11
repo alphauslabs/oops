@@ -38,8 +38,6 @@ type Scenario struct {
 	Env   map[string]string `yaml:"env"`
 	Run   []Run             `yaml:"run"`
 	Check string            `yaml:"check"`
-
-	workDir string
 }
 
 func (s *Scenario) RunScript(file string) ([]byte, error) {
@@ -55,50 +53,39 @@ func (s *Scenario) RunScript(file string) ([]byte, error) {
 	return c.CombinedOutput()
 }
 
-func (s *Scenario) ParseValue(v string) (string, error) {
-	var f string
-	var err error
-	if strings.HasPrefix(v, "#!/") {
-		f, err = s.WriteScript(v)
-		if err != nil {
-			return v, err
-		}
+func (s *Scenario) ParseValue(contents string, file ...string) (string, error) {
+	f := fmt.Sprintf("%v.sh", uuid.NewV4())
+	f = filepath.Join(os.TempDir(), f)
+	if len(file) > 0 {
+		f = file[0]
 	}
 
-	if f == "" {
-		return v, nil
+	if strings.HasPrefix(contents, "#!/") {
+		_, err := s.WriteScript(f, contents)
+		if err != nil {
+			return contents, err
+		}
 	}
 
 	b, err := s.RunScript(f)
 	return string(b), err
 }
 
-func (s *Scenario) WorkDir() string {
-	dir := s.workDir
-	if dir == "" {
-		dir = os.TempDir()
-	}
-
-	return dir
+func (s *Scenario) Write(file string, b []byte) error {
+	return ioutil.WriteFile(file, b, 0644)
 }
 
-func (s *Scenario) Write(f string, b []byte) error {
-	f = filepath.Join(s.WorkDir(), f)
-	return ioutil.WriteFile(f, b, 0644)
-}
-
-func (s *Scenario) WriteScript(v string) (string, error) {
-	n := filepath.Join(s.WorkDir(), fmt.Sprintf("%v.sh", uuid.NewV4()))
-	f, err := os.Create(n)
+func (s *Scenario) WriteScript(file, contents string) (string, error) {
+	f, err := os.Create(file)
 	if err != nil {
-		return "", err
+		return file, err
 	}
 
 	defer f.Close()
 	f.Chmod(os.ModePerm)
-	f.Write([]byte(v))
-	f.Sync()
-	return n, nil
+	f.Write([]byte(contents))
+	err = f.Sync()
+	return file, err
 }
 
 // LoggerReporter interface for httpexpect.
@@ -124,8 +111,8 @@ func doScenario(in *doScenarioInput) error {
 			return err
 		}
 
-		s.workDir = in.WorkDir
-		for _, run := range s.Run {
+		for i, run := range s.Run {
+			prefix := filepath.Join(os.TempDir(), fmt.Sprintf("%v_run%d", f, i))
 			u, err := url.Parse(run.Http.Url)
 			if err != nil {
 				break
@@ -134,18 +121,25 @@ func doScenario(in *doScenarioInput) error {
 			e := httpexpect.New(s, u.Scheme+"://"+u.Host)
 			req := e.Request(run.Http.Method, u.Path)
 			for k, v := range run.Http.Headers {
-				nv, _ := s.ParseValue(v)
+				fn := fmt.Sprintf("%v_hdr.%v", prefix, k)
+				nv, err := s.ParseValue(v, fn)
+				if err != nil {
+					log.Println(err)
+				}
+
 				req = req.WithHeader(k, nv)
 				log.Printf("[header] %v: %v", k, nv)
 			}
 
 			for k, v := range run.Http.QueryParams {
-				nv, _ := s.ParseValue(v)
+				fn := fmt.Sprintf("%v_qparams.%v", prefix, k)
+				nv, _ := s.ParseValue(v, fn)
 				req = req.WithQuery(k, nv)
 			}
 
 			if run.Http.Payload != "" {
-				nv, _ := s.ParseValue(run.Http.Payload)
+				fn := fmt.Sprintf("%v_payload", prefix)
+				nv, _ := s.ParseValue(run.Http.Payload, fn)
 				req = req.WithBytes([]byte(nv))
 			}
 
@@ -166,19 +160,25 @@ func doScenario(in *doScenarioInput) error {
 			}
 
 			if run.Http.Asserts.Shell != "" {
-				f, _ := s.WriteScript(run.Http.Asserts.Shell)
-				s, err := s.RunScript(f)
+				fn := fmt.Sprintf("%v_assertshell", prefix)
+				s.WriteScript(fn, run.Http.Asserts.Shell)
+				s, err := s.RunScript(fn)
 				if err != nil {
 					log.Printf("[error] asserts.shell: %v: %v", err, string(s))
+				} else {
+					log.Printf("asserts.shell: %v", string(s))
 				}
 			}
 		}
 
 		if s.Check != "" {
-			f, _ := s.WriteScript(s.Check)
-			s, err := s.RunScript(f)
+			fn := filepath.Join(os.TempDir(), fmt.Sprintf("%v_check", f))
+			fn, _ = s.WriteScript(fn, s.Check)
+			s, err := s.RunScript(fn)
 			if err != nil {
 				log.Printf("[error] check: %v: %v", err, string(s))
+			} else {
+				log.Printf("check: %v", string(s))
 			}
 		}
 	}
