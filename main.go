@@ -36,6 +36,7 @@ type Run struct {
 
 type Config struct {
 	WorkDir string `yaml:"workdir"`
+	Debug   bool   `yaml:"debug"`
 }
 
 type Scenario struct {
@@ -160,15 +161,16 @@ func main() {
 			continue
 		}
 
-		if resp.Raw().StatusCode != run.Http.Asserts.Code {
-			log.Printf("[error] code=%v, expected=%v", resp.Raw().StatusCode, run.Http.Asserts.Code)
+		code := resp.Raw().StatusCode
+		if code != run.Http.Asserts.Code {
+			log.Printf("[error] asserts.code=%v, expected=%v", code, run.Http.Asserts.Code)
 		}
 
 		if run.Http.Asserts.Shell != "" {
 			f, _ := s.WriteScript(run.Http.Asserts.Shell)
 			s, err := s.RunScript(f)
 			if err != nil {
-				log.Printf("[error] shell: %v: %v", err, string(s))
+				log.Printf("[error] asserts.shell: %v: %v", err, string(s))
 			}
 		}
 	}
