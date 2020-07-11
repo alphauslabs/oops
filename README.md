@@ -5,6 +5,10 @@ env:
   # or in the pod oops will be running on.
   ENV_KEY1: value1
   ENV_KEY2: value2
+  
+# Any value that starts with '#!/' (i.e. #!/bin/bash) will be written to disk as
+# an executable script file and the resulting output combined from stdout & stderr
+# will become the final evaluated value.
 
 # A list of http requests to perform sequentially.
 run:
