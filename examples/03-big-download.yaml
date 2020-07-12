@@ -1,3 +1,6 @@
+# This example only uses the 'check' section for the test. It will download the golang 1.14.4 source
+# and validates the download by checking the SHA256 checksum.
+
 check: |
   #!/bin/bash
   wget https://golang.org/dl/go1.14.4.src.tar.gz
