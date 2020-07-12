@@ -34,12 +34,14 @@ type Run struct {
 	Http RunHttp `yaml:"http"`
 }
 
+// Scenario reprents a single scenario file to run.
 type Scenario struct {
 	Env   map[string]string `yaml:"env"`
 	Run   []Run             `yaml:"run"`
 	Check string            `yaml:"check"`
 }
 
+// RunScript runs file and returns the combined stdout+stderr result.
 func (s *Scenario) RunScript(file string) ([]byte, error) {
 	c := exec.Command("sh", "-c", file)
 	c.Env = os.Environ()
@@ -53,6 +55,9 @@ func (s *Scenario) RunScript(file string) ([]byte, error) {
 	return c.CombinedOutput()
 }
 
+// ParseValue tries to check if contents is in script form and if it is, writes it
+// to disk as an executable, runs it and returns the resulting stream output.
+// Otherwise, return the contents as is.
 func (s *Scenario) ParseValue(contents string, file ...string) (string, error) {
 	f := fmt.Sprintf("%v.sh", uuid.NewV4())
 	f = filepath.Join(os.TempDir(), f)
@@ -73,10 +78,12 @@ func (s *Scenario) ParseValue(contents string, file ...string) (string, error) {
 	return contents, nil
 }
 
+// Write writes b to file.
 func (s *Scenario) Write(file string, b []byte) error {
 	return ioutil.WriteFile(file, b, 0644)
 }
 
+// WriteScript writes contents to file as an executable.
 func (s *Scenario) WriteScript(file, contents string) (string, error) {
 	f, err := os.Create(file)
 	if err != nil {
