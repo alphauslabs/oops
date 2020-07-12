@@ -10,6 +10,30 @@ run:
     response_out: /tmp/licenses.json
     asserts:
       status_code: 200
+      validate_json: |
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "spdx_id": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
       shell: |
         #!/bin/bash
         cat /tmp/licenses.json | jq

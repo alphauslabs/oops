@@ -11,13 +11,15 @@ import (
 	"strings"
 
 	"github.com/gavv/httpexpect/v2"
+	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
 	"gopkg.in/yaml.v2"
 )
 
 type Asserts struct {
-	Code  int    `yaml:"status_code"`
-	Shell string `yaml:"shell"`
+	Code         int    `yaml:"status_code"`
+	ValidateJSON string `yaml:"validate_json"`
+	Shell        string `yaml:"shell"`
 }
 
 type RunHttp struct {
@@ -39,6 +41,9 @@ type Scenario struct {
 	Env   map[string]string `yaml:"env"`
 	Run   []Run             `yaml:"run"`
 	Check string            `yaml:"check"`
+
+	me   *Scenario
+	errs []error
 }
 
 // RunScript runs file and returns the combined stdout+stderr result.
@@ -98,8 +103,15 @@ func (s *Scenario) WriteScript(file, contents string) (string, error) {
 }
 
 // LoggerReporter interface for httpexpect.
-func (s Scenario) Logf(fmt string, args ...interface{})       { log.Printf(fmt, args...) }
-func (s Scenario) Errorf(message string, args ...interface{}) { log.Printf(message, args...) }
+func (s Scenario) Logf(fmt string, args ...interface{}) {
+	log.Printf(fmt, args...)
+}
+
+func (s Scenario) Errorf(message string, args ...interface{}) {
+	m := fmt.Sprintf(message, args...)
+	s.me.errs = append(s.me.errs, fmt.Errorf(m))
+	log.Printf(message, args...)
+}
 
 type doScenarioInput struct {
 	ScenarioFiles []string
@@ -120,6 +132,9 @@ func doScenario(in *doScenarioInput) error {
 			continue
 		}
 
+		// Self-reference for our LoggerReporter functions.
+		s.me = &s
+
 		for i, run := range s.Run {
 			basef := filepath.Base(f)
 			prefix := filepath.Join(os.TempDir(), fmt.Sprintf("%v_run%d", basef, i))
@@ -128,13 +143,13 @@ func doScenario(in *doScenarioInput) error {
 			fn := fmt.Sprintf("%v_url", prefix)
 			nv, err := s.ParseValue(run.Http.Url, fn)
 			if err != nil {
-				log.Printf("url failed: %v", err)
+				s.errs = append(s.errs, errors.Wrapf(err, "ParseValue[%v]: %v", i, run.Http.Url))
 				continue
 			}
 
 			u, err := url.Parse(nv)
 			if err != nil {
-				log.Printf("url parse failed: %v", err)
+				s.errs = append(s.errs, errors.Wrapf(err, "url.Parse[%v]", i))
 				continue
 			}
 
@@ -144,7 +159,8 @@ func doScenario(in *doScenarioInput) error {
 				fn := fmt.Sprintf("%v_hdr.%v", prefix, k)
 				nv, err := s.ParseValue(v, fn)
 				if err != nil {
-					log.Println(err)
+					s.errs = append(s.errs, errors.Wrapf(err, "ParseValue[%v]: %v", i, v))
+					continue
 				}
 
 				req = req.WithHeader(k, nv)
@@ -174,20 +190,22 @@ func doScenario(in *doScenarioInput) error {
 				continue
 			}
 
-			code := resp.Raw().StatusCode
-			if code != run.Http.Asserts.Code {
-				log.Printf("[error] asserts.code=%v, expected=%v", code, run.Http.Asserts.Code)
+			resp = resp.Status(run.Http.Asserts.Code)
+
+			if run.Http.Asserts.ValidateJSON != "" {
+				resp.JSON().Schema(run.Http.Asserts.ValidateJSON)
 			}
 
 			if run.Http.Asserts.Shell != "" {
 				fn := fmt.Sprintf("%v_assertshell", prefix)
 				s.WriteScript(fn, run.Http.Asserts.Shell)
-				s, err := s.RunScript(fn)
+				b, err := s.RunScript(fn)
 				if err != nil {
-					log.Printf("[error] asserts.shell: %v: %v", err, string(s))
+					s.errs = append(s.errs, errors.Wrapf(err,
+						"assert.shell[%v]:\n%v: %v", i, run.Http.Asserts.Shell, string(b)))
 				} else {
-					if len(string(s)) > 0 {
-						log.Printf("asserts.shell: %v", string(s))
+					if len(string(b)) > 0 {
+						log.Printf("asserts.shell[%v]:\n%v", i, string(b))
 					}
 				}
 			}
@@ -197,15 +215,18 @@ func doScenario(in *doScenarioInput) error {
 			basef := filepath.Base(f)
 			fn := filepath.Join(os.TempDir(), fmt.Sprintf("%v_check", basef))
 			fn, _ = s.WriteScript(fn, s.Check)
-			s, err := s.RunScript(fn)
+			b, err := s.RunScript(fn)
 			if err != nil {
-				log.Printf("[error] check: %v: %v", err, string(s))
+				s.errs = append(s.errs, errors.Wrapf(err,
+					"check:\n%v: %v", s.Check, string(b)))
 			} else {
-				if len(string(s)) > 0 {
-					log.Printf("check: %v", string(s))
+				if len(string(b)) > 0 {
+					log.Printf("check:\n%v", string(b))
 				}
 			}
 		}
+
+		log.Printf("errs: %v", s.errs)
 	}
 
 	return nil
