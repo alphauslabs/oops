@@ -1,3 +1,5 @@
+![Go](https://github.com/flowerinthenight/oops/workflows/Go/badge.svg)
+
 ## Scenario file
 ```yaml
 env:
