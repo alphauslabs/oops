@@ -5,7 +5,6 @@ check: |
   #!/bin/bash
   wget https://golang.org/dl/go1.14.4.src.tar.gz
   if [ -x "$(command -v sha256sum)" ]; then
-    # Extract the SHA256 bit from the command output.
     SHA=$(echo -n "$(sha256sum go1.14.4.src.tar.gz | awk '{print $1}')")
     if [[ "$SHA" != "7011af3bbc2ac108d1b82ea8abb87b2e63f78844f0259be20cde4d42c5c40584" ]]; then
       echo "corrupted download?"
