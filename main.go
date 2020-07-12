@@ -105,8 +105,6 @@ func processSQS(ctx interface{}, data []byte) error {
 	ac.mtx.Lock()
 	defer ac.mtx.Unlock()
 
-	log.Printf("%v", string(data))
-
 	var c cmd
 	err := json.Unmarshal(data, &c)
 	if err != nil {
