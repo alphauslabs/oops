@@ -132,8 +132,8 @@ func doScenario(in *doScenarioInput) error {
 			continue
 		}
 
-		// Self-reference for our LoggerReporter functions.
-		s.me = &s
+		s.me = &s // self-reference for our LoggerReporter functions
+		log.Printf("scenario: %v", f)
 
 		for i, run := range s.Run {
 			basef := filepath.Base(f)

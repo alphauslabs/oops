@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,12 +22,38 @@ var (
 	}
 
 	files   []string
+	dir     string
 	verbose bool
 )
 
 func runE(cmd *cobra.Command, args []string) error {
+	tmp := make(map[string]struct{})
+	for _, v := range files {
+		f, _ := filepath.Abs(v)
+		tmp[f] = struct{}{}
+	}
+
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		f, _ := filepath.Abs(path)
+		log.Printf("input: %v", f)
+		if strings.HasSuffix(f, ".yaml") {
+			tmp[f] = struct{}{}
+		}
+
+		return nil
+	})
+
+	var final []string
+	for k, _ := range tmp {
+		final = append(final, k)
+	}
+
 	return doScenario(&doScenarioInput{
-		ScenarioFiles: files,
+		ScenarioFiles: final,
 		Verbose:       verbose,
 	})
 }
@@ -67,6 +95,7 @@ func runCmd() *cobra.Command {
 
 func init() {
 	rootcmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", verbose, "verbose mode")
+	rootcmd.PersistentFlags().StringVarP(&dir, "dir", "d", dir, "root directory for scenario file[s]")
 	rootcmd.Flags().StringSliceVarP(&files, "scenarios", "s", files, "scenario file[s] to run, comma-separated, or multiple -s")
 	rootcmd.AddCommand(runCmd())
 }
