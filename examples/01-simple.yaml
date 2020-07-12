@@ -1,3 +1,6 @@
+# This example queries GitHub licenses information and validates if the resulting
+# status code is STATUS_OK (200). The shell section prints the results.
+
 run:
 - http:
     method: GET
