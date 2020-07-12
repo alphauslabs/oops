@@ -3,6 +3,8 @@ module github.com/flowerinthenight/oops
 go 1.14
 
 require (
+	github.com/aws/aws-sdk-go v1.33.5
+	github.com/dchest/uniuri v0.0.0-20200228104902-7aecb25e1fe5
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/flowerinthenight/longsub v0.0.5
 	github.com/gavv/httpexpect/v2 v2.1.0

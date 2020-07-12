@@ -2,15 +2,25 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sns"
+	"github.com/dchest/uniuri"
 	"github.com/flowerinthenight/longsub"
+	uuid "github.com/satori/go.uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -34,7 +44,28 @@ var (
 	verbose bool
 )
 
+type cmd struct {
+	// Valid values: start | process
+	// start = initiate distribution of files in --dir to SNS
+	// process = normal processing (one yaml at a time)
+	Code string `json:"code"`
+
+	// To identify a batch. Sent by the initiator together with
+	// the 'process' code.
+	Id string `json:"id"`
+
+	// The file to process. Sent together with the 'process' code.
+	Scenario string `json:"scenario"`
+}
+
 func runE(cmd *cobra.Command, args []string) error {
+	return doScenario(&doScenarioInput{
+		ScenarioFiles: combineFilesAndDir(),
+		Verbose:       verbose,
+	})
+}
+
+func combineFilesAndDir() []string {
 	tmp := make(map[string]struct{})
 	for _, v := range files {
 		f, _ := filepath.Abs(v)
@@ -60,22 +91,88 @@ func runE(cmd *cobra.Command, args []string) error {
 		final = append(final, k)
 	}
 
-	return doScenario(&doScenarioInput{
-		ScenarioFiles: final,
-		Verbose:       verbose,
-	})
+	return final
 }
 
+type appctx struct {
+	mtx      *sync.Mutex
+	topicArn *string
+}
+
+// Our SQS message processing callback.
 func processSQS(ctx interface{}, data []byte) error {
+	ac := ctx.(*appctx)
+	ac.mtx.Lock()
+	defer ac.mtx.Unlock()
+
 	log.Printf("%v", string(data))
+
+	var c cmd
+	err := json.Unmarshal(data, &c)
+	if err != nil {
+		log.Printf("Unmarshal failed: %v", err)
+		return err
+	}
+
+	switch {
+	case c.Code == "start":
+		sess, _ := session.NewSession(&aws.Config{
+			Region:      aws.String(region),
+			Credentials: credentials.NewStaticCredentials(key, secret, ""),
+		})
+
+		var svc *sns.SNS
+		if rolearn != "" {
+			cnf := &aws.Config{Credentials: stscreds.NewCredentials(sess, rolearn)}
+			svc = sns.New(sess, cnf)
+		} else {
+			svc = sns.New(sess)
+		}
+
+		id := fmt.Sprintf("%s", uuid.NewV4())
+		final := combineFilesAndDir()
+		for _, f := range final {
+			nc := cmd{
+				Code:     "process",
+				Id:       id,
+				Scenario: f,
+			}
+
+			b, _ := json.Marshal(nc)
+			key := uniuri.NewLen(10)
+			m := &sns.PublishInput{
+				TopicArn: ac.topicArn,
+				Subject:  &key,
+				Message:  aws.String(string(b)),
+			}
+
+			_, err = svc.Publish(m)
+			if err != nil {
+				log.Printf("Publish failed: %v", err)
+				continue
+			}
+		}
+	case c.Code == "process":
+		log.Printf("process: %+v", c)
+		doScenario(&doScenarioInput{
+			ScenarioFiles: []string{c.Scenario},
+			Verbose:       verbose,
+		})
+	}
+
 	return nil
 }
 
 func run(ctx context.Context, done chan error) {
 	lsu := longsub.NewAWSUtil(region, key, secret, rolearn)
-	_, err := lsu.SetupSnsSqsSubscription(snssqs, snssqs)
+	t, err := lsu.SetupSnsSqsSubscription(snssqs, snssqs)
 	if err != nil {
 		panic(err)
+	}
+
+	ac := &appctx{
+		mtx:      &sync.Mutex{},
+		topicArn: t,
 	}
 
 	log.Printf("%v subscribed to %v", snssqs, snssqs)
@@ -83,7 +180,7 @@ func run(ctx context.Context, done chan error) {
 	ctx0, _ := context.WithCancel(ctx)
 	done0 := make(chan error, 1)
 	go func() {
-		ls := longsub.NewSqsLongSub(nil, snssqs, processSQS,
+		ls := longsub.NewSqsLongSub(ac, snssqs, processSQS,
 			longsub.WithRegion(region),
 			longsub.WithAccessKeyId(key),
 			longsub.WithSecretAccessKey(secret),
@@ -97,7 +194,6 @@ func run(ctx context.Context, done chan error) {
 	}()
 
 	<-ctx.Done()
-	log.Print("oops stopped")
 	done <- <-done0
 }
 
