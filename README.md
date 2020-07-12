@@ -55,6 +55,15 @@ run:
       # The expected http status code. Indicates a failure if not equal.
       status_code: 200
       
+      # JSON validation using https://github.com/xeipuuv/gojsonschema package.
+      validate_json: |
+        {
+          "type": "object",
+          "properties": {
+            ...
+          }
+        }
+      
       # A non-zero return value indicates a failure.
       # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_assertshell
       # Example: /tmp/scenario01.yaml_run0_assertshell
