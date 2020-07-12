@@ -1,4 +1,4 @@
-# This example demonstrates how can you do chaining tests in oops. The first run is basically
+# This example demonstrates how you can do chaining tests in oops. The first run is basically
 # the same as the first example without the shell section. The second run looks for the url
 # value of the 'unlicense' array item from the first result and do another http GET. For the
 # validations, it only checks if the status code is 200, then prints the output.
