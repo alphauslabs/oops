@@ -47,7 +47,7 @@ run:
     # If response payload is not empty, its contents will be written in the
     # file below. Useful if you want to refer to it under 'asserts.shell'
     # and/or 'check'.
-    response_out: /tmp/out.txt
+    response_out: /tmp/out.json
     
     asserts:
       # The expected http status code. Indicates a failure if not equal.
