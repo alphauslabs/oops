@@ -32,7 +32,7 @@ run:
       Content-Type: application/json
       
     # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_qparams.<key>
-    # Example: /tmp/scenario01.yaml_run0_qparams.key1
+    # Example: /tmp/scenario01.yaml_run0_qparams.key2
     query_params:
       key1: value1  
       key2: |
