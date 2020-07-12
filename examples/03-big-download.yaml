@@ -13,3 +13,4 @@ check: |
       echo "download successful"
     fi
   fi
+  rm go1.14.4.src.tar.gz
