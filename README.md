@@ -1,9 +1,10 @@
 ![Go](https://github.com/flowerinthenight/oops/workflows/Go/badge.svg)
 
 ## Overview
-`oops` is an automation-friendly, scalable, and scriptable API/generic testing tool designed to run on Kubernetes.
+`oops` is an automation-friendly, scalable, and scriptable API/generic testing tool designed to run on Kubernetes. 
 
 ## Scenario file
+All scenario files must have a `.yaml` extension.
 ```yaml
 env:
   # These key/values will be added to the environment variables in your local
