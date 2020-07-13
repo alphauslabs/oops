@@ -3,6 +3,17 @@
 ## Overview
 `oops` is an automation-friendly, highly-scalable, and scriptable API/generic testing tool built to run on [Kubernetes](https://kubernetes.io/). It accepts and runs file-based test cases, or 'scenarios' written in [YAML](https://yaml.org/).
 
+## Running in a local environment
+You can install the binary and run local scenario file(s). Useful for testing your scenario file before deployment.
+```bash
+# Install the binary:
+$ brew tap flowerinthenight/tap
+$ brew install oops
+
+# Run a single scenario file:
+$ oops -s ./examples/01-simple.yaml
+```
+
 ## Scenario file
 The following is the specification of a valid scenario file. All scenario files must have a `.yaml` extension.
 ```yaml
