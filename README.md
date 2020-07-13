@@ -39,7 +39,7 @@ To scale the testing workload, this tool will attempt to distribute all scenario
 4) The pod that receives the message will break down all scenario files into a single message each and publish to the SNS topic.
 5) All pods will receive these messages, thereby, distributing the test workload.
 
-Due to this workflow, it is recommended that your scenario files are isolated at the file level. That means as much as possible, a single scenario file is standalone. For integration tests, a single scenario file could contain multiple related test cases (i.e. create, inspect, delete type of tests) in it.
+Due to this workflow, it is recommended that your scenario files are isolated at the file level. That means that as much as possible, a single scenario file is standalone. For integration tests, a single scenario file could contain multiple related test cases (i.e. create, inspect, delete type of tests) in it.
 
 Although this tool was built to run on k8s, it will work just fine in any environment as long as the workload can be distributed properly using the current supported pubsub services.
 
