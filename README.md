@@ -6,17 +6,19 @@
 ## Running in a local environment
 You can install the binary and run local scenario file(s). Useful for testing your scenario file before deployment.
 ```bash
-# Install the binary:
+# Install the binary.
 $ brew tap flowerinthenight/tap
 $ brew install oops
 
-# Run a single scenario file:
+# Run a single scenario file.
 $ oops -s ./examples/01-simple.yaml
 
-# or multiple scenario files:
+# or multiple scenario files.
 $ oops -s ./examples/01-simple.yaml -s ./examples/02-chaining.yaml
 
-# For multiple scenario files in a directory (likely the case, eventually):
+# For multiple scenario files in a directory (likely the case, eventually),
+# you can provide the root directory as input. It will scan all yaml files
+# recursively and execute sequentially.
 $ oops --dir ./examples/
 ```
 
