@@ -27,15 +27,15 @@ To scale the testing workload, this tool will attempt to distribute all scenario
 
 **GCP PubSub**
 1) A topic is created with the name provided by `--pubsub`.
-2) A subsciption with the same name is also created that subscribes from the topic.
-3) Trigger the execution by publishing a `{"code":"start"}` to the topic.
+2) A subsciption with the same name is also created that subscribes to the topic.
+3) Trigger the execution by publishing a `{"code":"start"}` message to the topic.
 4) The pod that receives the message will break down all scenario files into a single message each and publish to the topic.
 5) All pods will receive these messages, thereby, distributing the test workload.
 
 **SNS+SQS**
 1) An SNS topc is created with the name provided by `--snssqs`.
-2) An SQS queue with the same name is also created that subscribes from the SNS topic.
-3) Trigger the execution by publishing a `{"code":"start"}` to the SNS topic.
+2) An SQS queue with the same name is also created that subscribes to the SNS topic.
+3) Trigger the execution by publishing a `{"code":"start"}` message to the SNS topic.
 4) The pod that receives the message will break down all scenario files into a single message each and publish to the SNS topic.
 5) All pods will receive these messages, thereby, distributing the test workload.
 
