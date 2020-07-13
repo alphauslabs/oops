@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oops
+spec:
+  selector:
+    matchLabels:
+      app: oops
+  replicas: 1
+  revisionHistoryLimit: 3
+  template:
+    metadata:
+      labels:
+        app: oops
+    spec:
+      containers:
+      - name: oops
+        image: quay.io/flowerinthenight/oops:v0.2.4
+        imagePullPolicy: Always
+        args: ["run", "--dir=/oops/scenarios", "--project-id=xxx", "--pubsub=oops", "--report-slack=https://hooks.slack.com/xxx"]
+        env:
+        - name: GET_HOSTS_FROM
+          value: dns
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /etc/oops/svcacct.json
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: gcpkeyfile
+          mountPath: "/etc/oops"
+          readOnly: true
+      # svcacct.json should have permissions for GCP Cloud PubSub
+      # $ kubectl create secret generic oops-keyfile --from-file svcacct.json
+      volumes:
+      - name: gcpkeyfile
+        secret:
+          secretName: oops-keyfile
+
+---
+ 
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: oops-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: oops
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
