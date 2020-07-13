@@ -12,6 +12,12 @@ $ brew install oops
 
 # Run a single scenario file:
 $ oops -s ./examples/01-simple.yaml
+
+# or multiple scenario files:
+$ oops -s ./examples/01-simple.yaml -s ./examples/02-chaining.yaml
+
+# For multiple scenario files in a directory (likely the case, eventually):
+$ oops --dir ./examples/
 ```
 
 ## Scenario file
