@@ -41,7 +41,7 @@ To scale the testing workload, this tool will attempt to distribute all scenario
 
 Due to this workflow, it is recommended that your scenario files are isolated at the file level. That means that as much as possible, a single scenario file is standalone. For integration tests, a single scenario file could contain multiple related test cases (i.e. create, inspect, delete type of tests) in it.
 
-Although this tool was built to run on k8s, it will work just fine in any environment as long as the workload can be distributed properly using the current supported pubsub services.
+Although this tool was built to run on k8s, it will work just fine in any environment as long as the workload can be distributed properly using the currently supported pubsub services.
 
 An example [`deployment.yaml`](https://github.com/flowerinthenight/oops/blob/master/deployment.yaml) for k8s using GCP PubSub is provided for reference. Make sure to update the relevant values for your own setup.
 
