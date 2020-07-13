@@ -256,13 +256,15 @@ func run(ctx context.Context, done chan error) {
 			log.Fatalf("subscription get/create for %v failed: %v", pubsub, err)
 		}
 
-		// Messages should be payer level. We will subdivide linked accts to separate messages for
-		// linked-acct-level processing.
-		ls0 := longsub.NewLengthySubscriber(app, project, pubsub, process)
-		err = ls0.Start(ctx0, done0)
-		if err != nil {
-			log.Fatalf("listener for export csv failed: %v", err)
-		}
+		go func() {
+			// Messages should be payer level. We will subdivide linked accts to separate messages for
+			// linked-acct-level processing.
+			ls0 := longsub.NewLengthySubscriber(app, project, pubsub, process)
+			err = ls0.Start(ctx0, done0)
+			if err != nil {
+				log.Fatalf("listener for export csv failed: %v", err)
+			}
+		}()
 	case snssqs != "":
 		lsu := longsub.NewAWSUtil(region, key, secret, rolearn)
 		t, err := lsu.SetupSnsSqsSubscription(snssqs, snssqs)
