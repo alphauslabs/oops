@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -221,6 +222,16 @@ func process(ctx interface{}, data []byte) error {
 }
 
 func run(ctx context.Context, done chan error) {
+	log.Printf("project: %v", project)
+	log.Printf("slack: %v", slack)
+	log.Printf("GOOGLE_APPLICATION_CREDENTIALS: %v", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+	dat, err := ioutil.ReadFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+	if err != nil {
+		log.Printf("read failed: %v", err)
+	}
+
+	log.Printf("json: %v", string(dat))
+
 	if snssqs != "" && pubsub != "" {
 		log.Fatal("cannot set both --sns-sqs and --pubsub")
 	}
@@ -281,8 +292,6 @@ func run(ctx context.Context, done chan error) {
 				log.Fatalf("start long processing for %v failed: %v", snssqs, err)
 			}
 		}()
-	default:
-		// ??
 	}
 
 	<-ctx.Done()
