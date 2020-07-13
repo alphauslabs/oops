@@ -39,6 +39,10 @@ To scale the testing workload, this tool will attempt to distribute all scenario
 4) The pod that receives the message will break down all scenario files into a single message each and publish to the SNS topic.
 5) All pods will receive these messages, thereby, distributing the test workload.
 
+Although this tool was built to run on k8s, it will work just fine in any environment as long as the workload can be distributed properly using the current supported pubsub services.
+
+An example [`deployment.yaml`](https://github.com/flowerinthenight/oops/blob/master/deployment.yaml) for k8s is provided for reference. Make sure to update the relevant values for your own setup.
+
 ## Scenario file
 The following is the specification of a valid scenario file. All scenario files must have a `.yaml` extension.
 ```yaml
