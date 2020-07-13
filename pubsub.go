@@ -94,7 +94,7 @@ func (p *PubsubPublisher) Test() error {
 	return p.mp.PublishRaw(context.Background(), "test", []byte("hello world"))
 }
 
-func (p *PubsubPublisher) Publish(ctrl string, data interface{}) error {
+func (p *PubsubPublisher) Publish(key string, data interface{}) error {
 	if p.mp == nil {
 		return fmt.Errorf("publisher is nil")
 	}
@@ -103,22 +103,11 @@ func (p *PubsubPublisher) Publish(ctrl string, data interface{}) error {
 	if err != nil {
 		return err
 	}
-	_ = b
 
-	// item := gopb.PubsubMessage{
-	// 	Control: ctrl,
-	// 	Data:    b,
-	// }
-
-	// ib, err := json.Marshal(item)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// err = p.mp.PublishRaw(context.Background(), util.GenerateNames(), ib)
-	// if err != nil {
-	// 	return err
-	// }
+	err = p.mp.PublishRaw(context.Background(), key, b)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

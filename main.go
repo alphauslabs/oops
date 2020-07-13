@@ -98,6 +98,63 @@ func combineFilesAndDir() []string {
 	return final
 }
 
+func distributePubsub(app *appctx) {
+	id := fmt.Sprintf("%s", uuid.NewV4())
+	final := combineFilesAndDir()
+	for _, f := range final {
+		nc := cmd{
+			Code:     "process",
+			Id:       id,
+			Scenario: f,
+		}
+
+		err := app.pub.Publish(uniuri.NewLen(10), nc)
+		if err != nil {
+			log.Printf("publish failed: %v ", err)
+			continue
+		}
+	}
+}
+
+func distributeSQS(app *appctx) {
+	sess, _ := session.NewSession(&aws.Config{
+		Region:      aws.String(region),
+		Credentials: credentials.NewStaticCredentials(key, secret, ""),
+	})
+
+	var svc *sns.SNS
+	if rolearn != "" {
+		cnf := &aws.Config{Credentials: stscreds.NewCredentials(sess, rolearn)}
+		svc = sns.New(sess, cnf)
+	} else {
+		svc = sns.New(sess)
+	}
+
+	id := fmt.Sprintf("%s", uuid.NewV4())
+	final := combineFilesAndDir()
+	for _, f := range final {
+		nc := cmd{
+			Code:     "process",
+			Id:       id,
+			Scenario: f,
+		}
+
+		b, _ := json.Marshal(nc)
+		key := uniuri.NewLen(10)
+		m := &sns.PublishInput{
+			TopicArn: app.topicArn,
+			Subject:  &key,
+			Message:  aws.String(string(b)),
+		}
+
+		_, err := svc.Publish(m)
+		if err != nil {
+			log.Printf("Publish failed: %v", err)
+			continue
+		}
+	}
+}
+
 type appctx struct {
 	pub      *PubsubPublisher
 	mtx      *sync.Mutex
@@ -119,41 +176,12 @@ func process(ctx interface{}, data []byte) error {
 
 	switch {
 	case c.Code == "start":
-		sess, _ := session.NewSession(&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(key, secret, ""),
-		})
-
-		var svc *sns.SNS
-		if rolearn != "" {
-			cnf := &aws.Config{Credentials: stscreds.NewCredentials(sess, rolearn)}
-			svc = sns.New(sess, cnf)
-		} else {
-			svc = sns.New(sess)
+		if pubsub != "" {
+			distributePubsub(app)
 		}
 
-		id := fmt.Sprintf("%s", uuid.NewV4())
-		final := combineFilesAndDir()
-		for _, f := range final {
-			nc := cmd{
-				Code:     "process",
-				Id:       id,
-				Scenario: f,
-			}
-
-			b, _ := json.Marshal(nc)
-			key := uniuri.NewLen(10)
-			m := &sns.PublishInput{
-				TopicArn: app.topicArn,
-				Subject:  &key,
-				Message:  aws.String(string(b)),
-			}
-
-			_, err = svc.Publish(m)
-			if err != nil {
-				log.Printf("Publish failed: %v", err)
-				continue
-			}
+		if snssqs != "" {
+			distributeSQS(app)
 		}
 	case c.Code == "process":
 		log.Printf("process: %+v", c)
@@ -228,6 +256,7 @@ func run(ctx context.Context, done chan error) {
 			}
 		}()
 	default:
+		// ??
 	}
 
 	<-ctx.Done()
