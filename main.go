@@ -65,6 +65,7 @@ type cmd struct {
 func runE(cmd *cobra.Command, args []string) error {
 	return doScenario(&doScenarioInput{
 		ScenarioFiles: combineFilesAndDir(),
+		Slack:         slack,
 		Verbose:       verbose,
 	})
 }

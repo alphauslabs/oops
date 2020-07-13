@@ -230,10 +230,11 @@ func doScenario(in *doScenarioInput) error {
 			}
 		}
 
-		log.Printf("errs: %v", s.errs)
 		if len(s.errs) == 0 {
 			continue
 		}
+
+		log.Printf("errs: %v", s.errs)
 
 		// Send to slack, if any.
 		if in.Slack != "" {
@@ -249,7 +250,10 @@ func doScenario(in *doScenarioInput) error {
 				},
 			}
 
-			payload.Notify(in.Slack)
+			err = payload.Notify(in.Slack)
+			if err != nil {
+				log.Printf("Notify (slack) failed: %v", err)
+			}
 		}
 	}
 
