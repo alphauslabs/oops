@@ -176,17 +176,17 @@ func process(ctx interface{}, data []byte) error {
 
 	switch {
 	case c.Code == "start":
-		if pubsub != "" {
+		switch {
+		case pubsub != "":
 			distributePubsub(app)
-		}
-
-		if snssqs != "" {
+		case snssqs != "":
 			distributeSQS(app)
 		}
 	case c.Code == "process":
 		log.Printf("process: %+v", c)
 		doScenario(&doScenarioInput{
 			ScenarioFiles: []string{c.Scenario},
+			Slack:         slack,
 			Verbose:       verbose,
 		})
 	}
@@ -302,7 +302,7 @@ func init() {
 	rootcmd.PersistentFlags().StringVar(&rolearn, "aws-rolearn", os.Getenv("ROLE_ARN"), "AWS role ARN to assume")
 	rootcmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", verbose, "verbose mode")
 	rootcmd.PersistentFlags().StringVarP(&dir, "dir", "d", dir, "root directory for scenario file[s]")
-	rootcmd.PersistentFlags().StringVar(&slack, "slack-url", slack, "slack url for notification")
+	rootcmd.PersistentFlags().StringVar(&slack, "report-slack", slack, "slack url for notification")
 	rootcmd.Flags().StringSliceVarP(&files, "scenarios", "s", files, "scenario file[s] to run, comma-separated, or multiple -s")
 	rootcmd.AddCommand(runCmd())
 }

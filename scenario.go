@@ -42,8 +42,9 @@ type Scenario struct {
 	Run   []Run             `yaml:"run"`
 	Check string            `yaml:"check"`
 
-	me   *Scenario
-	errs []error
+	me    *Scenario
+	input *doScenarioInput
+	errs  []error
 }
 
 // RunScript runs file and returns the combined stdout+stderr result.
@@ -109,13 +110,17 @@ func (s Scenario) Logf(fmt string, args ...interface{}) {
 
 func (s Scenario) Errorf(message string, args ...interface{}) {
 	m := fmt.Sprintf(message, args...)
-	s.me.errs = append(s.me.errs, fmt.Errorf(m))
 	log.Printf(message, args...)
+	s.me.errs = append(s.me.errs, fmt.Errorf(m))
+	if s.input.Slack != "" {
+
+	}
 }
 
 type doScenarioInput struct {
 	ScenarioFiles []string
 	WorkDir       string
+	Slack         string
 	Verbose       bool
 }
 
@@ -132,7 +137,8 @@ func doScenario(in *doScenarioInput) error {
 			continue
 		}
 
-		s.me = &s // self-reference for our LoggerReporter functions
+		s.me = &s    // self-reference for our LoggerReporter functions
+		s.input = in // our copy
 		log.Printf("scenario: %v", f)
 
 		for i, run := range s.Run {
