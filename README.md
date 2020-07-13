@@ -4,7 +4,7 @@
 `oops` is an automation-friendly, highly-scalable, and scriptable API/generic testing tool built to run on [Kubernetes](https://kubernetes.io/). It accepts and runs file-based test cases, or 'scenarios' written in [YAML](https://yaml.org/).
 
 ## Running in a local environment
-You can install the binary and run local scenario file(s). Useful for testing your scenario file before deployment.
+You can install the binary and run local scenario file(s). This is useful for testing your scenario file(s) before deployment.
 ```bash
 # Install the binary.
 $ brew tap flowerinthenight/tap
@@ -21,6 +21,23 @@ $ oops -s ./examples/01-simple.yaml -s ./examples/02-chaining.yaml
 # recursively and execute sequentially.
 $ oops --dir ./examples/
 ```
+
+## Deploying to Kubernetes
+To scale the testing workload, this tool will attempt to distribute all scenario files to all worker pods using pub/sub messaging (currently supports SNS+SQS, and GCP PubSub). At the moment, it needs to be triggered first before the actual execution starts.
+
+**GCP PubSub**
+1) A topic is created with the name provided by `--pubsub`.
+2) A subsciption with the same name is also created that subscribes from the topic.
+3) Trigger the execution by publishing a `{"code":"start"}` to the topic.
+4) The pod that receives the message will break down all scenario files into a single message each and publish to the topic.
+5) All pods will receive these messages, thereby, distributing the test workload.
+
+**SNS+SQS**
+1) An SNS topc is created with the name provided by `--snssqs`.
+2) An SQS queue with the same name is also created that subscribes from the SNS topic.
+3) Trigger the execution by publishing a `{"code":"start"}` to the SNS topic.
+4) The pod that receives the message will break down all scenario files into a single message each and publish to the SNS topic.
+5) All pods will receive these messages, thereby, distributing the test workload.
 
 ## Scenario file
 The following is the specification of a valid scenario file. All scenario files must have a `.yaml` extension.
