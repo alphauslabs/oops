@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gavv/httpexpect/v2"
 	"github.com/pkg/errors"
@@ -110,11 +111,8 @@ func (s Scenario) Logf(fmt string, args ...interface{}) {
 
 func (s Scenario) Errorf(message string, args ...interface{}) {
 	m := fmt.Sprintf(message, args...)
-	log.Printf(message, args...)
 	s.me.errs = append(s.me.errs, fmt.Errorf(m))
-	if s.input.Slack != "" {
-
-	}
+	log.Printf(message, args...)
 }
 
 type doScenarioInput struct {
@@ -233,6 +231,26 @@ func doScenario(in *doScenarioInput) error {
 		}
 
 		log.Printf("errs: %v", s.errs)
+		if len(s.errs) == 0 {
+			continue
+		}
+
+		// Send to slack, if any.
+		if in.Slack != "" {
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color:     "danger",
+						Title:     fmt.Sprintf("%v - failure", filepath.Base(f)),
+						Text:      fmt.Sprintf("%v", s.errs),
+						Footer:    "oops",
+						Timestamp: time.Now().Unix(),
+					},
+				},
+			}
+
+			payload.Notify(in.Slack)
+		}
 	}
 
 	return nil
