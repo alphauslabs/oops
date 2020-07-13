@@ -4,7 +4,7 @@
 `oops` is an automation-friendly, scalable, and scriptable API/generic testing tool designed to run on Kubernetes. 
 
 ## Scenario file
-All scenario files must have a `.yaml` extension.
+The following is the specification of a valid scenario file. All scenario files must have a `.yaml` extension.
 ```yaml
 env:
   # These key/values will be added to the environment variables in your local
