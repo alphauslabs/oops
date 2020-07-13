@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: oops
-        image: quay.io/flowerinthenight/oops:v0.2.4
+        image: quay.io/flowerinthenight/oops:v0.2.5
         imagePullPolicy: Always
         args: ["run", "--dir=/oops/scenarios", "--project-id=xxx", "--pubsub=oops", "--report-slack=https://hooks.slack.com/xxx"]
         env:
