@@ -18,7 +18,7 @@ $ oops -s ./examples/01-simple.yaml -s ./examples/02-chaining.yaml
 
 # For multiple scenario files in a directory (likely the case, eventually),
 # you can provide the root directory as input. It will scan all yaml files
-# recursively and execute sequentially.
+# recursively and execute them sequentially.
 $ oops --dir ./examples/
 ```
 
