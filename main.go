@@ -177,11 +177,36 @@ func process(ctx interface{}, data []byte) error {
 
 	switch {
 	case c.Code == "start":
+		var dist string
 		switch {
 		case pubsub != "":
 			distributePubsub(app)
+			dist = pubsub
 		case snssqs != "":
 			distributeSQS(app)
+			dist = snssqs
+		}
+
+		host, _ := os.Hostname()
+
+		// Send to slack, if any.
+		if slack != "" {
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color:     "good",
+						Title:     "start tests",
+						Text:      fmt.Sprintf("from %v through %v", host, dist),
+						Footer:    "oops",
+						Timestamp: time.Now().Unix(),
+					},
+				},
+			}
+
+			err = payload.Notify(slack)
+			if err != nil {
+				log.Printf("Notify (slack) failed: %v", err)
+			}
 		}
 	case c.Code == "process":
 		log.Printf("process: %+v", c)
