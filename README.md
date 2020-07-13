@@ -1,5 +1,8 @@
 ![Go](https://github.com/flowerinthenight/oops/workflows/Go/badge.svg)
 
+## Overview
+`oops` is an automation-friendly, scalable, and scriptable API/generic testing tool designed to run on Kubernetes.
+
 ## Scenario file
 ```yaml
 env:
