@@ -84,3 +84,10 @@ check: |
   #!/bin/bash
   echo "check"
 ```
+
+----
+
+## TODO
+PR's are welcome!
+- [ ] Support for other scripting engines other than `bash/sh`, i.e. Jinja
+- [ ] Store reports to some storage, i.e. S3, GCS, etc.
