@@ -32,14 +32,18 @@ var (
 		RunE:  runE,
 	}
 
+	project string
+	pubsub  string
+
 	region  string
 	key     string
 	secret  string
 	rolearn string
-
-	files   []string
-	dir     string
 	snssqs  string
+
+	files []string
+	dir   string
+
 	slack   string
 	verbose bool
 )
@@ -95,15 +99,16 @@ func combineFilesAndDir() []string {
 }
 
 type appctx struct {
+	pub      *PubsubPublisher
 	mtx      *sync.Mutex
 	topicArn *string
 }
 
-// Our SQS message processing callback.
-func processSQS(ctx interface{}, data []byte) error {
-	ac := ctx.(*appctx)
-	ac.mtx.Lock()
-	defer ac.mtx.Unlock()
+// Our message processing callback.
+func process(ctx interface{}, data []byte) error {
+	app := ctx.(*appctx)
+	app.mtx.Lock()
+	defer app.mtx.Unlock()
 
 	var c cmd
 	err := json.Unmarshal(data, &c)
@@ -139,7 +144,7 @@ func processSQS(ctx interface{}, data []byte) error {
 			b, _ := json.Marshal(nc)
 			key := uniuri.NewLen(10)
 			m := &sns.PublishInput{
-				TopicArn: ac.topicArn,
+				TopicArn: app.topicArn,
 				Subject:  &key,
 				Message:  aws.String(string(b)),
 			}
@@ -162,34 +167,68 @@ func processSQS(ctx interface{}, data []byte) error {
 }
 
 func run(ctx context.Context, done chan error) {
-	lsu := longsub.NewAWSUtil(region, key, secret, rolearn)
-	t, err := lsu.SetupSnsSqsSubscription(snssqs, snssqs)
-	if err != nil {
-		panic(err)
+	if snssqs != "" && pubsub != "" {
+		log.Fatal("cannot set both --sns-sqs and --pubsub")
 	}
 
-	ac := &appctx{
-		mtx:      &sync.Mutex{},
-		topicArn: t,
-	}
-
-	log.Printf("%v subscribed to %v", snssqs, snssqs)
-
+	app := &appctx{mtx: &sync.Mutex{}}
 	ctx0, _ := context.WithCancel(ctx)
 	done0 := make(chan error, 1)
-	go func() {
-		ls := longsub.NewSqsLongSub(ac, snssqs, processSQS,
-			longsub.WithRegion(region),
-			longsub.WithAccessKeyId(key),
-			longsub.WithSecretAccessKey(secret),
-			longsub.WithRoleArn(rolearn),
-		)
 
-		err := ls.Start(ctx0, done0)
+	switch {
+	case pubsub != "":
+		// Make sure topic/subscription is created. Only used for creating subscription if needed.
+		_, t, err := GetPublisher(project, pubsub)
 		if err != nil {
-			log.Printf("start long processing for %v failed, err=%v", snssqs, err)
+			log.Fatalf("publisher get/create for %v failed: %v", pubsub, err)
 		}
-	}()
+
+		app.pub, err = NewPubsubPublisher(project, pubsub)
+		if err != nil {
+			log.Fatalf("create publisher %v failed: %v", pubsub, err)
+		}
+
+		if app.pub == nil {
+			log.Fatalf("fatal error, publisher nil")
+		}
+
+		GetSubscription(project, pubsub, t, time.Second*60)
+		if err != nil {
+			log.Fatalf("subscription get/create for %v failed: %v", pubsub, err)
+		}
+
+		// Messages should be payer level. We will subdivide linked accts to separate messages for
+		// linked-acct-level processing.
+		ls0 := longsub.NewLengthySubscriber(app, project, pubsub, process)
+		err = ls0.Start(ctx0, done0)
+		if err != nil {
+			log.Fatalf("listener for export csv failed: %v", err)
+		}
+	case snssqs != "":
+		lsu := longsub.NewAWSUtil(region, key, secret, rolearn)
+		t, err := lsu.SetupSnsSqsSubscription(snssqs, snssqs)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		app.topicArn = t
+		log.Printf("%v subscribed to %v", snssqs, snssqs)
+
+		go func() {
+			ls := longsub.NewSqsLongSub(app, snssqs, process,
+				longsub.WithRegion(region),
+				longsub.WithAccessKeyId(key),
+				longsub.WithSecretAccessKey(secret),
+				longsub.WithRoleArn(rolearn),
+			)
+
+			err := ls.Start(ctx0, done0)
+			if err != nil {
+				log.Fatalf("start long processing for %v failed: %v", snssqs, err)
+			}
+		}()
+	default:
+	}
 
 	<-ctx.Done()
 	done <- <-done0
@@ -221,11 +260,13 @@ func runCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&snssqs, "sns-sqs", snssqs, "name of the SNS topic, same name will be used in SQS")
+	cmd.Flags().StringVar(&snssqs, "sns-sqs", snssqs, "name of the SNS topic and SQS queue")
+	cmd.Flags().StringVar(&pubsub, "pubsub", pubsub, "name of the GCP pubsub and subscription")
 	return cmd
 }
 
 func init() {
+	rootcmd.PersistentFlags().StringVar(&project, "project-id", os.Getenv("GCP_PROJECT_ID"), "GCP project id")
 	rootcmd.PersistentFlags().StringVar(&region, "region", os.Getenv("AWS_REGION"), "AWS region")
 	rootcmd.PersistentFlags().StringVar(&key, "aws-key", os.Getenv("AWS_ACCESS_KEY_ID"), "AWS access key")
 	rootcmd.PersistentFlags().StringVar(&secret, "aws-secret", os.Getenv("AWS_SECRET_ACCESS_KEY"), "AWS secret key")
