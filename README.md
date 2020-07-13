@@ -1,6 +1,52 @@
 ![Go](https://github.com/flowerinthenight/oops/workflows/Go/badge.svg)
 
+## Overview
+`oops` is an automation-friendly, highly-scalable, and scriptable API/generic testing tool built to run on [Kubernetes](https://kubernetes.io/). It accepts and runs file-based test cases, or 'scenarios' written in [YAML](https://yaml.org/).
+
+## Running in a local environment
+You can install the binary and run local scenario file(s). This is useful for testing your scenario file(s) before deployment.
+```bash
+# Install the binary.
+$ brew tap flowerinthenight/tap
+$ brew install oops
+
+# Run a single scenario file.
+$ oops -s ./examples/01-simple.yaml
+
+# or multiple scenario files.
+$ oops -s ./examples/01-simple.yaml -s ./examples/02-chaining.yaml
+
+# For multiple scenario files in a directory (likely the case, eventually),
+# you can provide the root directory as input. It will scan all yaml files
+# recursively and execute them sequentially.
+$ oops --dir ./examples/
+```
+
+## Deploying to Kubernetes
+To scale the testing workload, this tool will attempt to distribute all scenario files to all worker pods using pub/sub messaging (currently supports SNS+SQS, and GCP PubSub). At the moment, it needs to be triggered first before the actual execution starts.
+
+**GCP PubSub**
+1) A topic is created with the name provided by `--pubsub`.
+2) A subsciption with the same name is also created that subscribes to the topic.
+3) Trigger the execution by publishing a `{"code":"start"}` message to the topic.
+4) The pod that receives the message will break down all scenario files into a single message each and publish to the topic.
+5) All pods will receive these messages, thereby, distributing the test workload.
+
+**SNS+SQS**
+1) An SNS topc is created with the name provided by `--snssqs`.
+2) An SQS queue with the same name is also created that subscribes to the SNS topic.
+3) Trigger the execution by publishing a `{"code":"start"}` message to the SNS topic.
+4) The pod that receives the message will break down all scenario files into a single message each and publish to the SNS topic.
+5) All pods will receive these messages, thereby, distributing the test workload.
+
+Due to this workflow, it is recommended that your scenario files are isolated at the file level. That means that as much as possible, a single scenario file is standalone. For integration tests, a single scenario file could contain multiple related test cases (i.e. create, inspect, delete type of tests) in it.
+
+Although this tool was built to run on k8s, it will work just fine in any environment as long as the workload can be distributed properly using the currently supported pubsub services.
+
+An example [`deployment.yaml`](https://github.com/flowerinthenight/oops/blob/master/deployment.yaml) for k8s using GCP PubSub is provided for reference. Make sure to update the relevant values for your own setup.
+
 ## Scenario file
+The following is the specification of a valid scenario file. All scenario files must have a `.yaml` extension.
 ```yaml
 env:
   # These key/values will be added to the environment variables in your local
@@ -80,3 +126,13 @@ check: |
   #!/bin/bash
   echo "check"
 ```
+
+Example [scenario files](https://github.com/flowerinthenight/oops/tree/master/examples) are provided for reference as well. You can run them as is.
+
+----
+
+## TODO
+PR's are welcome!
+- [ ] Support for other scripting engines other than `bash/sh`, i.e. Jinja
+- [ ] Store reports to some storage, i.e. S3, GCS, etc.
+- [ ] Support for AKS + Service Bus
