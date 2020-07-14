@@ -61,6 +61,13 @@ env:
 # test, etc.
 # If supported, the filename of the script will be indicated below.
 
+# A script to run before anything else. A non-zero return value indicates a failure.
+# Filename: <tempdir>/<scenario-filename>.yaml_prepare
+# Example: /tmp/scenario01.yaml_prepare
+prepare: |
+  #!/bin/bash
+  echo "prepare"
+
 # A list of http requests to perform sequentially. This tool will continue running
 # all the list entries even if failure occurs during the execution.
 run:
@@ -122,6 +129,8 @@ run:
 
 # A script to run after 'run', if present. Useful also as a standalone script
 # in itself, if 'run' is empty. A non-zero return value indicates a failure.
+# Filename: <tempdir>/<scenario-filename>.yaml_check
+# Example: /tmp/scenario01.yaml_check
 check: |
   #!/bin/bash
   echo "check"

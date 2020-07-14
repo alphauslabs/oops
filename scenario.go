@@ -39,9 +39,10 @@ type Run struct {
 
 // Scenario reprents a single scenario file to run.
 type Scenario struct {
-	Env   map[string]string `yaml:"env"`
-	Run   []Run             `yaml:"run"`
-	Check string            `yaml:"check"`
+	Env     map[string]string `yaml:"env"`
+	Prepare string            `yaml:"prepare"`
+	Run     []Run             `yaml:"run"`
+	Check   string            `yaml:"check"`
 
 	me    *Scenario
 	input *doScenarioInput
@@ -138,6 +139,21 @@ func doScenario(in *doScenarioInput) error {
 		s.me = &s    // self-reference for our LoggerReporter functions
 		s.input = in // our copy
 		log.Printf("scenario: %v", f)
+
+		if s.Prepare != "" {
+			basef := filepath.Base(f)
+			fn := filepath.Join(os.TempDir(), fmt.Sprintf("%v_prepare", basef))
+			fn, _ = s.WriteScript(fn, s.Prepare)
+			b, err := s.RunScript(fn)
+			if err != nil {
+				s.errs = append(s.errs, errors.Wrapf(err,
+					"prepare:\n%v: %v", s.Prepare, string(b)))
+			} else {
+				if len(string(b)) > 0 {
+					log.Printf("prepare:\n%v", string(b))
+				}
+			}
+		}
 
 		for i, run := range s.Run {
 			basef := filepath.Base(f)
