@@ -227,8 +227,17 @@ func run(ctx context.Context, done chan error) {
 	}
 
 	log.Printf("rootdir: %v", dir)
-	log.Printf("project: %v", project)
 	log.Printf("slack: %v", slack)
+	if pubsub != "" {
+		log.Printf("project: %v", project)
+		log.Printf("svcacct: %v", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+	}
+
+	if snssqs != "" {
+		log.Printf("region: %v", region)
+		log.Printf("key: %v", key)
+		log.Printf("rolearn: %v", rolearn)
+	}
 
 	app := &appctx{mtx: &sync.Mutex{}}
 	ctx0, _ := context.WithCancel(ctx)

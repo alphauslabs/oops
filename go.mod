@@ -3,6 +3,7 @@ module github.com/flowerinthenight/oops
 go 1.14
 
 require (
+	cloud.google.com/go v0.61.0 // indirect
 	cloud.google.com/go/pubsub v1.5.0
 	github.com/NYTimes/gizmo v1.3.5
 	github.com/aws/aws-sdk-go v1.33.5
@@ -24,8 +25,10 @@ require (
 	github.com/sirupsen/logrus v1.6.0 // indirect
 	github.com/spf13/cobra v1.0.0
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/valyala/fasthttp v1.15.0 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
-	golang.org/x/tools v0.0.0-20200711155855-7342f9734a7d // indirect
+	golang.org/x/tools v0.0.0-20200714190737-9048b464a08d // indirect
+	google.golang.org/genproto v0.0.0-20200715011427-11fb19a81f2c // indirect
 	gopkg.in/yaml.v2 v2.3.0
 )
