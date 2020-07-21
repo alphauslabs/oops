@@ -143,8 +143,8 @@ Example [scenario files](https://github.com/flowerinthenight/oops/tree/master/ex
 ## TODO
 PR's are welcome!
 - [ ] Parsing and assertions for response JSON payloads
+- [ ] Labels/tags for filtering what tests to run
 - [ ] Support for other scripting engines other than `bash/sh`, i.e. Jinja
 - [ ] Store reports to some storage, i.e. S3, GCS, etc.
 - [ ] Support for AKS + Service Bus
-- [ ] Labels/tags for filtering what tests to run
 - [ ] Possibility of running as a service?
