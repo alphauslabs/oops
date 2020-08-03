@@ -20,7 +20,7 @@ import (
 type Asserts struct {
 	Code         int    `yaml:"status_code"`
 	ValidateJSON string `yaml:"validate_json"`
-	Shell        string `yaml:"shell"`
+	Script       string `yaml:"script"`
 }
 
 type RunHttp struct {
@@ -49,9 +49,35 @@ type Scenario struct {
 	errs  []error
 }
 
+func (s Scenario) getHead(file string) ([]byte, error) {
+	c := exec.Command("head", "-n", "1", file)
+	return c.CombinedOutput()
+}
+
 // RunScript runs file and returns the combined stdout+stderr result.
 func (s *Scenario) RunScript(file string) ([]byte, error) {
-	c := exec.Command("sh", "-c", file)
+	l1, err := s.getHead(file)
+	if err != nil {
+		return nil, err
+	}
+
+	if !strings.HasPrefix(string(l1), "#!") {
+		return nil, fmt.Errorf("unsupported")
+	}
+
+	runner := strings.Split(string(l1), " ")[0] // don't support '/usr/bin/env xx'
+	runner = strings.Split(runner, "#!")[1]
+	runner = strings.Trim(filepath.Base(runner), "\n")
+
+	var c *exec.Cmd
+	switch {
+	case strings.Contains(runner, "python"):
+		c = exec.Command(runner, file)
+	default:
+		// Assume it's a shell interpreter.
+		c = exec.Command(runner, "-c", file)
+	}
+
 	c.Env = os.Environ()
 	if len(s.Env) > 0 {
 		for k, v := range s.Env {
@@ -67,13 +93,13 @@ func (s *Scenario) RunScript(file string) ([]byte, error) {
 // to disk as an executable, runs it and returns the resulting stream output.
 // Otherwise, return the contents as is.
 func (s *Scenario) ParseValue(contents string, file ...string) (string, error) {
-	f := fmt.Sprintf("%v.sh", uuid.NewV4())
-	f = filepath.Join(os.TempDir(), f)
-	if len(file) > 0 {
-		f = file[0]
-	}
+	if strings.HasPrefix(contents, "#!") {
+		f := fmt.Sprintf("oops_%v", uuid.NewV4())
+		f = filepath.Join(os.TempDir(), f)
+		if len(file) > 0 {
+			f = file[0]
+		}
 
-	if strings.HasPrefix(contents, "#!/") {
 		_, err := s.WriteScript(f, contents)
 		if err != nil {
 			return contents, err
@@ -216,16 +242,16 @@ func doScenario(in *doScenarioInput) error {
 				resp.JSON().Schema(run.Http.Asserts.ValidateJSON)
 			}
 
-			if run.Http.Asserts.Shell != "" {
-				fn := fmt.Sprintf("%v_assertshell", prefix)
-				s.WriteScript(fn, run.Http.Asserts.Shell)
+			if run.Http.Asserts.Script != "" {
+				fn := fmt.Sprintf("%v_assertscript", prefix)
+				s.WriteScript(fn, run.Http.Asserts.Script)
 				b, err := s.RunScript(fn)
 				if err != nil {
 					s.errs = append(s.errs, errors.Wrapf(err,
-						"assert.shell[%v]:\n%v: %v", i, run.Http.Asserts.Shell, string(b)))
+						"assert.script[%v]:\n%v: %v", i, run.Http.Asserts.Script, string(b)))
 				} else {
 					if len(string(b)) > 0 {
-						log.Printf("asserts.shell[%v]:\n%v", i, string(b))
+						log.Printf("asserts.script[%v]:\n%v", i, string(b))
 					}
 				}
 			}

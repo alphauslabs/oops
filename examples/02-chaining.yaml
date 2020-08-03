@@ -24,7 +24,7 @@ run:
     response_out: /tmp/unlicense.json
     asserts:
       status_code: 200
-      shell: |
+      script: |
         #!/bin/bash
         cat /tmp/unlicense.json | jq
 
