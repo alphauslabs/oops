@@ -105,7 +105,7 @@ run:
       {"key1":"value1","key2":"value2"}
       
     # If response payload is not empty, its contents will be written in the
-    # file below. Useful if you want to refer to it under 'asserts.shell'
+    # file below. Useful if you want to refer to it under 'asserts.script'
     # and/or 'check'.
     response_out: /tmp/out.json
     
