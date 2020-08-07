@@ -54,12 +54,17 @@ env:
   ENV_KEY1: value1
   ENV_KEY2: value2
   
-# Any value that starts with '#!/' (i.e. #!/bin/bash) will be written to disk as
+# Any value that starts with '#!' (i.e. #!/bin/bash) will be written to disk as
 # an executable script file and the resulting output combined from stdout & stderr
 # will become the final evaluated value. This is useful if you chain http calls,
 # such as, the url of the second test is from the payload response of the first
 # test, etc.
+#
 # If supported, the filename of the script will be indicated below.
+#
+# At the moment, shell interpreters (that works with `bin -c scriptfile` command is
+# supported. Also, Python is supported as well by using the shebang:
+#   #!/path/to/python/binary
 
 # A script to run before anything else. A non-zero return value indicates a failure.
 # Filename: <tempdir>/<scenario-filename>.yaml_prepare
@@ -100,7 +105,7 @@ run:
       {"key1":"value1","key2":"value2"}
       
     # If response payload is not empty, its contents will be written in the
-    # file below. Useful if you want to refer to it under 'asserts.shell'
+    # file below. Useful if you want to refer to it under 'asserts.script'
     # and/or 'check'.
     response_out: /tmp/out.json
     
@@ -118,9 +123,9 @@ run:
         }
       
       # A non-zero return value indicates a failure.
-      # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_assertshell
-      # Example: /tmp/scenario01.yaml_run0_assertshell
-      shell: |
+      # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_assertscript
+      # Example: /tmp/scenario01.yaml_run0_assertscript
+      script: |
         #!/bin/bash
         if [[ "$(cat /tmp/out.json | jq -r .username)" != "user01" ]]; then
           echo "try fail"
@@ -144,7 +149,7 @@ Example [scenario files](https://github.com/flowerinthenight/oops/tree/master/ex
 PR's are welcome!
 - [ ] Parsing and assertions for response JSON payloads
 - [ ] Labels/tags for filtering what tests to run
-- [ ] Support for other scripting engines other than `bash/sh`, i.e. Jinja
+- [x] Support for other scripting engines other than `bash/sh`, i.e. Python
 - [ ] Store reports to some storage, i.e. S3, GCS, etc.
 - [ ] Support for AKS + Service Bus
 - [ ] Possibility of running as a service?
