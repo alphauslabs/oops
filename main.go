@@ -43,6 +43,7 @@ var (
 
 	files []string
 	dir   string
+	tags  []string
 
 	slack   string
 	verbose bool
@@ -344,6 +345,7 @@ func init() {
 	rootcmd.PersistentFlags().StringVarP(&dir, "dir", "d", dir, "root directory for scenario file[s]")
 	rootcmd.PersistentFlags().StringVar(&slack, "report-slack", slack, "slack url for notification")
 	rootcmd.Flags().StringSliceVarP(&files, "scenarios", "s", files, "scenario file[s] to run, comma-separated, or multiple -s")
+	rootcmd.Flags().StringSliceVarP(&tags, "tags", "t", tags, "key=value labels in scenario files that are allowed to run, empty means all")
 	rootcmd.AddCommand(runCmd())
 }
 

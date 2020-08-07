@@ -40,6 +40,7 @@ type Run struct {
 
 // Scenario reprents a single scenario file to run.
 type Scenario struct {
+	Tags    map[string]string `yaml:"tags"`
 	Env     map[string]string `yaml:"env"`
 	Prepare string            `yaml:"prepare"`
 	Run     []Run             `yaml:"run"`
@@ -150,6 +151,28 @@ type doScenarioInput struct {
 	Verbose       bool
 }
 
+func isAllowed(s *Scenario) bool {
+	if len(tags) == 0 {
+		return true
+	}
+
+	var matched int
+	for _, t := range tags {
+		tt := strings.Split(t, "=")
+		if len(tt) != 2 {
+			continue
+		}
+
+		for k, v := range s.Tags {
+			if k == tt[0] && v == tt[1] {
+				matched++
+			}
+		}
+	}
+
+	return matched == len(tags)
+}
+
 func doScenario(in *doScenarioInput) error {
 	for _, f := range in.ScenarioFiles {
 		yml, err := ioutil.ReadFile(f)
@@ -160,6 +183,11 @@ func doScenario(in *doScenarioInput) error {
 		var s Scenario
 		err = yaml.Unmarshal(yml, &s)
 		if err != nil {
+			continue
+		}
+
+		if !isAllowed(&s) {
+			log.Printf("%v is not allowed by tags", f)
 			continue
 		}
 
