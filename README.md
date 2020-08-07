@@ -49,8 +49,8 @@ An example [`deployment.yaml`](https://github.com/flowerinthenight/oops/blob/mas
 The following is the specification of a valid scenario file. All scenario files must have a `.yaml` extension.
 ```yaml
 tags:
-  # Tag(s) for this scenario file. When oops is run with --tags flag, if these
-  # tag combination matches with --tags, this scenario file is allowed to run.
+  # Tag(s) for this scenario file. If these tag combinations match with what is
+  # provided in the --tags flag (if any), this scenario file is allowed to run.
   key1: value1
   key2: value2
   
