@@ -28,6 +28,7 @@ type RunHttp struct {
 	Url         string            `yaml:"url"`
 	Headers     map[string]string `yaml:"headers"`
 	QueryParams map[string]string `yaml:"query_params"`
+	Forms       map[string]string `yaml:"forms"`
 	Payload     string            `yaml:"payload"`
 	ResponseOut string            `yaml:"response_out"`
 	Asserts     *Asserts          `yaml:"asserts"`
@@ -217,6 +218,12 @@ func doScenario(in *doScenarioInput) error {
 				fn := fmt.Sprintf("%v_qparams.%v", prefix, k)
 				nv, _ := s.ParseValue(v, fn)
 				req = req.WithQuery(k, nv)
+			}
+
+			for k, v := range run.Http.Forms {
+				fn := fmt.Sprintf("%v_forms.%v", prefix, k)
+				nv, _ := s.ParseValue(v, fn)
+				req = req.WithFormField(k, nv)
 			}
 
 			if run.Http.Payload != "" {

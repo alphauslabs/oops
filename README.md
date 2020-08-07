@@ -99,6 +99,14 @@ run:
         #!/bin/bash
         echo -n "$KEY2"
         
+    # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_forms.<key>
+    # Example: /tmp/scenario01.yaml_run0_forms.key2
+    forms:
+      key1: value1
+      key2: |
+        #!/bin/bash
+        echo -n "$KEY2"
+
     # Filename: <tempdir>/<scenario-filename>.yaml_run<index>_payload
     # Example: /tmp/scenario01.yaml_run0_payload
     payload: |
