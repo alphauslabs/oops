@@ -48,6 +48,12 @@ An example [`deployment.yaml`](https://github.com/flowerinthenight/oops/blob/mas
 ## Scenario file
 The following is the specification of a valid scenario file. All scenario files must have a `.yaml` extension.
 ```yaml
+tags:
+  # Tag(s) for this scenario file. When oops is run with --tags flag, if these
+  # tag combination matches with --tags, this scenario file is allowed to run.
+  key1: value1
+  key2: value2
+  
 env:
   # These key/values will be added to the environment variables in your local
   # or in the pod oops will be running on.
@@ -156,7 +162,7 @@ Example [scenario files](https://github.com/flowerinthenight/oops/tree/master/ex
 ## TODO
 PR's are welcome!
 - [ ] Parsing and assertions for response JSON payloads
-- [ ] Labels/tags for filtering what tests to run
+- [x] Labels/tags for filtering what tests to run
 - [x] Support for other scripting engines other than `bash/sh`, i.e. Python
 - [ ] Store reports to some storage, i.e. S3, GCS, etc.
 - [ ] Support for AKS + Service Bus
