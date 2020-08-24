@@ -23,23 +23,9 @@ $ oops --dir ./examples/
 ```
 
 ## Deploying to Kubernetes
-To scale the testing workload, this tool will attempt to distribute all scenario files to all worker pods using pub/sub messaging (currently supports SNS+SQS, and GCP PubSub). At the moment, it needs to be triggered first before the actual execution starts.
+To scale the testing workload, this tool will attempt to distribute all scenario files to all worker pods using pub/sub messaging (currently supports SNS+SQS, and GCP PubSub). At the moment, it needs to be triggered first before the actual execution starts. The trigger payload is `{"code":"start"}`.
 
-**GCP PubSub**
-1) A topic is created with the name provided by `--pubsub`.
-2) A subsciption with the same name is also created that subscribes to the topic.
-3) Trigger the execution by publishing a `{"code":"start"}` message to the topic.
-4) The pod that receives the message will break down all scenario files into a single message each and publish to the topic.
-5) All pods will receive these messages, thereby, distributing the test workload.
-
-**SNS+SQS**
-1) An SNS topc is created with the name provided by `--snssqs`.
-2) An SQS queue with the same name is also created that subscribes to the SNS topic.
-3) Trigger the execution by publishing a `{"code":"start"}` message to the SNS topic.
-4) The pod that receives the message will break down all scenario files into a single message each and publish to the SNS topic.
-5) All pods will receive these messages, thereby, distributing the test workload.
-
-Due to this workflow, it is recommended that your scenario files are isolated at the file level. That means that as much as possible, a single scenario file is standalone. For integration tests, a single scenario file could contain multiple related test cases (i.e. create, inspect, delete type of tests) in it.
+It is recommended that your scenario files are isolated at the file level. That means that as much as possible, a single scenario file is standalone. For integration tests, a single scenario file could contain multiple related test cases (i.e. create, inspect, delete type of tests) in it.
 
 Although this tool was built to run on k8s, it will work just fine in any environment as long as the workload can be distributed properly using the currently supported pubsub services.
 
