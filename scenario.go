@@ -320,8 +320,7 @@ func doScenario(in *doScenarioInput) error {
 			log.Printf("errs: %v", s.errs)
 		}
 
-		switch {
-		case in.ReportSlack != "":
+		if in.ReportSlack != "" {
 			if len(s.errs) > 0 {
 				// Send to slack, if any.
 				payload := SlackMessage{
@@ -341,7 +340,9 @@ func doScenario(in *doScenarioInput) error {
 					log.Printf("Notify (slack) failed: %v", err)
 				}
 			}
-		case in.ReportPubsub != "" && in.app != nil:
+		}
+
+		if in.ReportPubsub != "" && in.app != nil {
 			if in.app.rpub != nil {
 				status := "success"
 				var data string
@@ -351,7 +352,7 @@ func doScenario(in *doScenarioInput) error {
 				}
 
 				r := ReportPubsub{
-					Scenario: filepath.Base(f),
+					Scenario: f,
 					Attributes: map[string]string{
 						"status": status,
 					},
