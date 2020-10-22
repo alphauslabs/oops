@@ -152,4 +152,5 @@ PR's are welcome!
 - [x] Support for other scripting engines other than `bash/sh`, i.e. Python
 - [ ] Store reports to some storage, i.e. S3, GCS, etc.
 - [ ] Support for AKS + Service Bus
+- [x] Add GCP PubSub for reporting
 - [ ] Possibility of running as a service?
