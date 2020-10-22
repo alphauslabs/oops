@@ -147,7 +147,7 @@ func (s Scenario) Errorf(message string, args ...interface{}) {
 type doScenarioInput struct {
 	ScenarioFiles []string
 	WorkDir       string
-	Slack         string
+	ReportSlack   string
 	Verbose       bool
 }
 
@@ -313,7 +313,7 @@ func doScenario(in *doScenarioInput) error {
 
 		log.Printf("errs: %v", s.errs)
 
-		if in.Slack == "" {
+		if in.ReportSlack == "" {
 			continue
 		}
 
@@ -330,7 +330,7 @@ func doScenario(in *doScenarioInput) error {
 			},
 		}
 
-		err = payload.Notify(in.Slack)
+		err = payload.Notify(in.ReportSlack)
 		if err != nil {
 			log.Printf("Notify (slack) failed: %v", err)
 		}

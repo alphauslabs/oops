@@ -46,7 +46,9 @@ var (
 	dir   string
 	tags  []string
 
-	slack   string
+	repslack  string
+	reppubsub string
+
 	verbose bool
 )
 
@@ -67,7 +69,7 @@ type cmd struct {
 func runE(cmd *cobra.Command, args []string) error {
 	return doScenario(&doScenarioInput{
 		ScenarioFiles: combineFilesAndDir(),
-		Slack:         slack,
+		ReportSlack:   repslack,
 		Verbose:       verbose,
 	})
 }
@@ -193,7 +195,7 @@ func process(ctx interface{}, data []byte) error {
 		host, _ := os.Hostname()
 
 		// Send to slack, if any.
-		if slack != "" {
+		if repslack != "" {
 			payload := SlackMessage{
 				Attachments: []SlackAttachment{
 					{
@@ -206,7 +208,7 @@ func process(ctx interface{}, data []byte) error {
 				},
 			}
 
-			err = payload.Notify(slack)
+			err = payload.Notify(repslack)
 			if err != nil {
 				log.Printf("Notify (slack) failed: %v", err)
 			}
@@ -215,7 +217,7 @@ func process(ctx interface{}, data []byte) error {
 		log.Printf("process: %+v", c)
 		doScenario(&doScenarioInput{
 			ScenarioFiles: []string{c.Scenario},
-			Slack:         slack,
+			ReportSlack:   repslack,
 			Verbose:       verbose,
 		})
 	}
@@ -229,7 +231,7 @@ func run(ctx context.Context, done chan error) {
 	}
 
 	log.Printf("rootdir: %v", dir)
-	log.Printf("slack: %v", slack)
+	log.Printf("report-slack: %v", repslack)
 	if pubsub != "" {
 		log.Printf("project: %v", project)
 		log.Printf("svcacct: %v", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
@@ -344,7 +346,8 @@ func init() {
 	rootcmd.PersistentFlags().StringVar(&rolearn, "aws-rolearn", os.Getenv("ROLE_ARN"), "AWS role ARN to assume")
 	rootcmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", verbose, "verbose mode")
 	rootcmd.PersistentFlags().StringVarP(&dir, "dir", "d", dir, "root directory for scenario file[s]")
-	rootcmd.PersistentFlags().StringVar(&slack, "report-slack", slack, "slack url for notification")
+	rootcmd.PersistentFlags().StringVar(&repslack, "report-slack", repslack, "slack url for notification")
+	rootcmd.PersistentFlags().StringVar(&reppubsub, "report-pubsub", reppubsub, "pubsub topic for notification")
 	rootcmd.PersistentFlags().StringSliceVarP(&files, "scenarios", "s", files, "scenario file[s] to run, comma-separated, or multiple -s")
 	rootcmd.PersistentFlags().StringSliceVarP(&tags, "tags", "t", tags, "key=value labels in scenario files that are allowed to run, empty means all")
 	rootcmd.AddCommand(runCmd())
