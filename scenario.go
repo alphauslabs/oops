@@ -359,11 +359,17 @@ func doScenario(in *doScenarioInput) error {
 					Data: data,
 				}
 
+				log.Printf("__publish: %+v", r)
+
 				err := in.app.rpub.Publish(uniuri.NewLen(10), r)
 				if err != nil {
-					log.Printf("Publish failed: %v ", err)
+					log.Printf("Publish failed: %v", err)
 				}
+			} else {
+				log.Printf("__rpub nil")
 			}
+		} else {
+			log.Printf("__topic=%v, app=%v", in.ReportPubsub, in.app)
 		}
 	}
 
