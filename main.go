@@ -218,6 +218,7 @@ func process(ctx interface{}, data []byte) error {
 	case c.Code == "process":
 		log.Printf("process: %+v", c)
 		doScenario(&doScenarioInput{
+			app:           app,
 			ScenarioFiles: []string{c.Scenario},
 			ReportSlack:   repslack,
 			ReportPubsub:  reppubsub,

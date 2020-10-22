@@ -342,24 +342,26 @@ func doScenario(in *doScenarioInput) error {
 				}
 			}
 		case in.ReportPubsub != "" && in.app != nil:
-			status := "success"
-			var data string
-			if len(s.errs) > 0 {
-				status = "error"
-				data = fmt.Sprintf("%v", s.errs)
-			}
+			if in.app.rpub != nil {
+				status := "success"
+				var data string
+				if len(s.errs) > 0 {
+					status = "error"
+					data = fmt.Sprintf("%v", s.errs)
+				}
 
-			r := ReportPubsub{
-				Scenario: filepath.Base(f),
-				Attributes: map[string]string{
-					"status": status,
-				},
-				Data: data,
-			}
+				r := ReportPubsub{
+					Scenario: filepath.Base(f),
+					Attributes: map[string]string{
+						"status": status,
+					},
+					Data: data,
+				}
 
-			err := in.app.rpub.Publish(uniuri.NewLen(10), r)
-			if err != nil {
-				log.Printf("Publish failed: %v ", err)
+				err := in.app.rpub.Publish(uniuri.NewLen(10), r)
+				if err != nil {
+					log.Printf("Publish failed: %v ", err)
+				}
 			}
 		}
 	}
