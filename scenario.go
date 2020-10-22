@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dchest/uniuri"
 	"github.com/gavv/httpexpect/v2"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
@@ -36,6 +37,12 @@ type RunHttp struct {
 
 type Run struct {
 	Http RunHttp `yaml:"http"`
+}
+
+type ReportPubsub struct {
+	Scenario   string            `json:"scenario"`
+	Attributes map[string]string `json:"attributes"` // [status]=success|error
+	Data       string            `json:"data"`
 }
 
 // Scenario reprents a single scenario file to run.
@@ -145,9 +152,11 @@ func (s Scenario) Errorf(message string, args ...interface{}) {
 }
 
 type doScenarioInput struct {
+	app           *appctx
 	ScenarioFiles []string
 	WorkDir       string
 	ReportSlack   string
+	ReportPubsub  string
 	Verbose       bool
 }
 
@@ -307,32 +316,51 @@ func doScenario(in *doScenarioInput) error {
 			}
 		}
 
-		if len(s.errs) == 0 {
-			continue
+		if len(s.errs) > 0 {
+			log.Printf("errs: %v", s.errs)
 		}
 
-		log.Printf("errs: %v", s.errs)
+		switch {
+		case in.ReportSlack != "":
+			if len(s.errs) > 0 {
+				// Send to slack, if any.
+				payload := SlackMessage{
+					Attachments: []SlackAttachment{
+						{
+							Color:     "danger",
+							Title:     fmt.Sprintf("%v - failure", filepath.Base(f)),
+							Text:      fmt.Sprintf("%v", s.errs),
+							Footer:    "oops",
+							Timestamp: time.Now().Unix(),
+						},
+					},
+				}
 
-		if in.ReportSlack == "" {
-			continue
-		}
+				err = payload.Notify(in.ReportSlack)
+				if err != nil {
+					log.Printf("Notify (slack) failed: %v", err)
+				}
+			}
+		case in.ReportPubsub != "" && in.app != nil:
+			status := "success"
+			var data string
+			if len(s.errs) > 0 {
+				status = "error"
+				data = fmt.Sprintf("%v", s.errs)
+			}
 
-		// Send to slack, if any.
-		payload := SlackMessage{
-			Attachments: []SlackAttachment{
-				{
-					Color:     "danger",
-					Title:     fmt.Sprintf("%v - failure", filepath.Base(f)),
-					Text:      fmt.Sprintf("%v", s.errs),
-					Footer:    "oops",
-					Timestamp: time.Now().Unix(),
+			r := ReportPubsub{
+				Scenario: filepath.Base(f),
+				Attributes: map[string]string{
+					"status": status,
 				},
-			},
-		}
+				Data: data,
+			}
 
-		err = payload.Notify(in.ReportSlack)
-		if err != nil {
-			log.Printf("Notify (slack) failed: %v", err)
+			err := in.app.rpub.Publish(uniuri.NewLen(10), r)
+			if err != nil {
+				log.Printf("Publish failed: %v ", err)
+			}
 		}
 	}
 

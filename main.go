@@ -70,6 +70,7 @@ func runE(cmd *cobra.Command, args []string) error {
 	return doScenario(&doScenarioInput{
 		ScenarioFiles: combineFilesAndDir(),
 		ReportSlack:   repslack,
+		ReportPubsub:  reppubsub,
 		Verbose:       verbose,
 	})
 }
@@ -161,7 +162,8 @@ func distributeSQS(app *appctx) {
 }
 
 type appctx struct {
-	pub      *PubsubPublisher
+	pub      *PubsubPublisher // starter publisher topic
+	rpub     *PubsubPublisher // topic to publish reports
 	mtx      *sync.Mutex
 	topicArn *string
 }
@@ -218,6 +220,7 @@ func process(ctx interface{}, data []byte) error {
 		doScenario(&doScenarioInput{
 			ScenarioFiles: []string{c.Scenario},
 			ReportSlack:   repslack,
+			ReportPubsub:  reppubsub,
 			Verbose:       verbose,
 		})
 	}
@@ -226,6 +229,7 @@ func process(ctx interface{}, data []byte) error {
 }
 
 func run(ctx context.Context, done chan error) {
+	var err error
 	if snssqs != "" && pubsub != "" {
 		log.Fatal("cannot set both --sns-sqs and --pubsub")
 	}
@@ -249,6 +253,14 @@ func run(ctx context.Context, done chan error) {
 
 	switch {
 	case pubsub != "":
+		// Setup reports publisher topic, if provided.
+		if reppubsub != "" {
+			app.rpub, err = NewPubsubPublisher(project, reppubsub)
+			if err != nil {
+				log.Fatalf("create publisher %v failed: %v", reppubsub, err)
+			}
+		}
+
 		// Make sure topic/subscription is created. Only used for creating subscription if needed.
 		_, t, err := GetPublisher(project, pubsub)
 		if err != nil {
@@ -264,7 +276,7 @@ func run(ctx context.Context, done chan error) {
 			log.Fatalf("fatal error, publisher nil")
 		}
 
-		GetSubscription(project, pubsub, t, time.Second*60)
+		_, err = GetSubscription(project, pubsub, t, time.Second*60)
 		if err != nil {
 			log.Fatalf("subscription get/create for %v failed: %v", pubsub, err)
 		}
@@ -355,6 +367,7 @@ func init() {
 
 func main() {
 	log.SetFlags(0)
+	log.SetPrefix("[oops] ")
 	log.SetOutput(os.Stdout)
 	rootcmd.Execute()
 }
