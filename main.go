@@ -19,7 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sns"
 	"github.com/dchest/uniuri"
-	"github.com/flowerinthenight/longsub"
+	lssqs "github.com/flowerinthenight/longsub/awssqs"
+	lspubsub "github.com/flowerinthenight/longsub/gcppubsub"
 	uuid "github.com/satori/go.uuid"
 	"github.com/spf13/cobra"
 )
@@ -269,15 +270,15 @@ func run(ctx context.Context, done chan error) {
 		go func() {
 			// Messages should be payer level. We will subdivide linked accts to separate messages for
 			// linked-acct-level processing.
-			ls0 := longsub.NewLengthySubscriber(app, project, pubsub, process)
-			err = ls0.Start(ctx0, done0)
+			ls := lspubsub.NewLengthySubscriber(app, project, pubsub, process)
+			err = ls.Start(ctx0, done0)
 			if err != nil {
 				log.Fatalf("listener for export csv failed: %v", err)
 			}
 		}()
 	case snssqs != "":
-		lsu := longsub.NewAWSUtil(region, key, secret, rolearn)
-		t, err := lsu.SetupSnsSqsSubscription(snssqs, snssqs)
+		lsh := lssqs.NewHelper(region, key, secret, rolearn)
+		t, err := lsh.SetupSnsSqsSubscription(snssqs, snssqs)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -286,11 +287,11 @@ func run(ctx context.Context, done chan error) {
 		log.Printf("%v subscribed to %v", snssqs, snssqs)
 
 		go func() {
-			ls := longsub.NewSqsLongSub(app, snssqs, process,
-				longsub.WithRegion(region),
-				longsub.WithAccessKeyId(key),
-				longsub.WithSecretAccessKey(secret),
-				longsub.WithRoleArn(rolearn),
+			ls := lssqs.NewLengthySubscriber(app, snssqs, process,
+				lssqs.WithRegion(region),
+				lssqs.WithAccessKeyId(key),
+				lssqs.WithSecretAccessKey(secret),
+				lssqs.WithRoleArn(rolearn),
 			)
 
 			err := ls.Start(ctx0, done0)
