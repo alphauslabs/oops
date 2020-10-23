@@ -346,7 +346,7 @@ func runCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&snssqs, "sns-sqs", snssqs, "name of the SNS topic and SQS queue")
+	cmd.Flags().StringVar(&snssqs, "snssqs", snssqs, "name of the SNS topic and SQS queue")
 	cmd.Flags().StringVar(&pubsub, "pubsub", pubsub, "name of the GCP pubsub and subscription")
 	return cmd
 }

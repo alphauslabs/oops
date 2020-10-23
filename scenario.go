@@ -344,19 +344,27 @@ func doScenario(in *doScenarioInput) error {
 
 		if in.ReportPubsub != "" && in.app != nil {
 			if in.app.rpub != nil {
+				attr := make(map[string]string)
 				status := "success"
 				var data string
 				if len(s.errs) > 0 {
 					status = "error"
+					attr["status"] = status
 					data = fmt.Sprintf("%v", s.errs)
 				}
 
+				if snssqs != "" {
+					attr["snssqs"] = snssqs
+				}
+
+				if pubsub != "" {
+					attr["pubsub"] = pubsub
+				}
+
 				r := ReportPubsub{
-					Scenario: f,
-					Attributes: map[string]string{
-						"status": status,
-					},
-					Data: data,
+					Scenario:   f,
+					Attributes: attr,
+					Data:       data,
 				}
 
 				err := in.app.rpub.Publish(uniuri.NewLen(10), r)
