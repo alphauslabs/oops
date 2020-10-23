@@ -42,6 +42,7 @@ type Run struct {
 type ReportPubsub struct {
 	Scenario   string            `json:"scenario"`
 	Attributes map[string]string `json:"attributes"` // [status]=success|error
+	Status     string            `json:"status"`     // success|error
 	Data       string            `json:"data"`
 }
 
@@ -344,15 +345,14 @@ func doScenario(in *doScenarioInput) error {
 
 		if in.ReportPubsub != "" && in.app != nil {
 			if in.app.rpub != nil {
-				attr := make(map[string]string)
 				status := "success"
 				var data string
 				if len(s.errs) > 0 {
 					status = "error"
-					attr["status"] = status
 					data = fmt.Sprintf("%v", s.errs)
 				}
 
+				attr := make(map[string]string)
 				if snssqs != "" {
 					attr["snssqs"] = snssqs
 				}
@@ -364,6 +364,7 @@ func doScenario(in *doScenarioInput) error {
 				r := ReportPubsub{
 					Scenario:   f,
 					Attributes: attr,
+					Status:     status,
 					Data:       data,
 				}
 
