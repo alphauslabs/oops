@@ -162,8 +162,8 @@ func distributeSQS(app *appctx) {
 }
 
 type appctx struct {
-	pub      *PubsubPublisher // starter publisher topic
-	rpub     *PubsubPublisher // topic to publish reports
+	pub      *lspubsub.PubsubPublisher // starter publisher topic
+	rpub     *lspubsub.PubsubPublisher // topic to publish reports
 	mtx      *sync.Mutex
 	topicArn *string
 }
@@ -256,19 +256,19 @@ func run(ctx context.Context, done chan error) {
 	case pubsub != "":
 		// Setup reports publisher topic, if provided.
 		if reppubsub != "" {
-			app.rpub, err = NewPubsubPublisher(project, reppubsub)
+			app.rpub, err = lspubsub.NewPubsubPublisher(project, reppubsub)
 			if err != nil {
 				log.Fatalf("create publisher %v failed: %v", reppubsub, err)
 			}
 		}
 
 		// Make sure topic/subscription is created. Only used for creating subscription if needed.
-		_, t, err := GetPublisher(project, pubsub)
+		_, t, err := lspubsub.GetPublisher(project, pubsub)
 		if err != nil {
 			log.Fatalf("publisher get/create for %v failed: %v", pubsub, err)
 		}
 
-		app.pub, err = NewPubsubPublisher(project, pubsub)
+		app.pub, err = lspubsub.NewPubsubPublisher(project, pubsub)
 		if err != nil {
 			log.Fatalf("create publisher %v failed: %v", pubsub, err)
 		}
@@ -277,7 +277,7 @@ func run(ctx context.Context, done chan error) {
 			log.Fatalf("fatal error, publisher nil")
 		}
 
-		_, err = GetSubscription(project, pubsub, t, time.Second*60)
+		_, err = lspubsub.GetSubscription(project, pubsub, t, time.Second*60)
 		if err != nil {
 			log.Fatalf("subscription get/create for %v failed: %v", pubsub, err)
 		}
