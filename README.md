@@ -1,4 +1,4 @@
-![Main](https://github.com/flowerinthenight/oops/workflows/Main/badge.svg)
+![main](https://github.com/flowerinthenight/oops/workflows/main/badge.svg)
 
 ## Overview
 `oops` is an automation-friendly, highly-scalable, and scriptable API/generic testing tool built to run on [Kubernetes](https://kubernetes.io/). It accepts and runs file-based test cases, or 'scenarios' written in [YAML](https://yaml.org/).
