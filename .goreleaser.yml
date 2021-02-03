@@ -17,14 +17,14 @@ changelog:
     - '^test:'
 release:
   github:
-    owner: flowerinthenight
+    owner: mobingi
     name: oops
 brews:
 - tap:
-    owner: flowerinthenight
+    owner: mobingi
     name: homebrew-tap
   name: oops
-  homepage: "https://github.com/flowerinthenight/oops"
+  homepage: "https://github.com/mobingi/oops"
   description: "Kubernetes-native testing tool."
   folder: Formula
   install: |
