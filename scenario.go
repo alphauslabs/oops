@@ -264,6 +264,15 @@ func doScenario(in *doScenarioInput) error {
 				req = req.WithQuery(k, nv)
 			}
 
+			if len(run.HTTP.Files) > 0 {
+				req = req.WithMultipart()
+			}
+			for k, v := range run.HTTP.Files {
+				fn := fmt.Sprintf("%v_files.%v", prefix, k)
+				nv, _ := s.ParseValue(v, fn)
+				req = req.WithFile(k, nv)
+			}
+
 			for k, v := range run.HTTP.Forms {
 				fn := fmt.Sprintf("%v_forms.%v", prefix, k)
 				nv, _ := s.ParseValue(v, fn)
