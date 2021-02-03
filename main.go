@@ -82,7 +82,7 @@ func combineFilesAndDir() []string {
 		tmp[f] = struct{}{}
 	}
 
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -95,6 +95,9 @@ func combineFilesAndDir() []string {
 
 		return nil
 	})
+	if walkErr != nil {
+		log.Fatalf("Filepath walk failed: %v", walkErr)
+	}
 
 	var final []string
 	for k, _ := range tmp {
