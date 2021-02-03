@@ -101,6 +101,10 @@ func combineFilesAndDir() []string {
 		final = append(final, k)
 	}
 
+	if len(final) == 0 {
+		log.Fatal("No files found. Please recheck directory.")
+	}
+
 	return final
 }
 
