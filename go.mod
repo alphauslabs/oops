@@ -1,4 +1,4 @@
-module github.com/flowerinthenight/oops
+module github.com/alphauslabs/oops
 
 go 1.14
 
