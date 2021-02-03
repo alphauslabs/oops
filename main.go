@@ -60,7 +60,7 @@ type cmd struct {
 
 	// To identify a batch. Sent by the initiator together with
 	// the 'process' code.
-	Id string `json:"id"`
+	ID string `json:"id"`
 
 	// The file to process. Sent together with the 'process' code.
 	Scenario string `json:"scenario"`
@@ -100,7 +100,7 @@ func combineFilesAndDir() []string {
 	}
 
 	var final []string
-	for k, _ := range tmp {
+	for k := range tmp {
 		final = append(final, k)
 	}
 
@@ -117,7 +117,7 @@ func distributePubsub(app *appctx) {
 	for _, f := range final {
 		nc := cmd{
 			Code:     "process",
-			Id:       id,
+			ID:       id,
 			Scenario: f,
 		}
 
@@ -148,7 +148,7 @@ func distributeSQS(app *appctx) {
 	for _, f := range final {
 		nc := cmd{
 			Code:     "process",
-			Id:       id,
+			ID:       id,
 			Scenario: f,
 		}
 
@@ -256,7 +256,8 @@ func run(ctx context.Context, done chan error) {
 	}
 
 	app := &appctx{mtx: &sync.Mutex{}}
-	ctx0, _ := context.WithCancel(ctx)
+	ctx0, cancelCtx0 := context.WithCancel(ctx)
+	defer cancelCtx0()
 	done0 := make(chan error, 1)
 
 	switch {
