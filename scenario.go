@@ -18,27 +18,32 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+//Asserts represents acceptance criteria for a test case
 type Asserts struct {
 	Code         int    `yaml:"status_code"`
 	ValidateJSON string `yaml:"validate_json"`
 	Script       string `yaml:"script"`
 }
 
-type RunHttp struct {
+//RunHTTP represents configuration on how to run HTTP test
+type RunHTTP struct {
 	Method      string            `yaml:"method"`
-	Url         string            `yaml:"url"`
+	URL         string            `yaml:"url"`
 	Headers     map[string]string `yaml:"headers"`
 	QueryParams map[string]string `yaml:"query_params"`
+	Files       map[string]string `yaml:"files"`
 	Forms       map[string]string `yaml:"forms"`
 	Payload     string            `yaml:"payload"`
 	ResponseOut string            `yaml:"response_out"`
 	Asserts     *Asserts          `yaml:"asserts"`
 }
 
+//Run represent methods for testing
 type Run struct {
-	Http RunHttp `yaml:"http"`
+	HTTP RunHTTP `yaml:"http"`
 }
 
+//ReportPubsub represents configuration to report to pubsub
 type ReportPubsub struct {
 	Scenario   string            `json:"scenario"`
 	Attributes map[string]string `json:"attributes"` // [status]=success|error
@@ -46,13 +51,14 @@ type ReportPubsub struct {
 	Data       string            `json:"data"`
 }
 
-// Scenario reprents a single scenario file to run.
+// Scenario represents a single scenario file to run.
 type Scenario struct {
-	Tags    map[string]string `yaml:"tags"`
-	Env     map[string]string `yaml:"env"`
-	Prepare string            `yaml:"prepare"`
-	Run     []Run             `yaml:"run"`
-	Check   string            `yaml:"check"`
+	Maintainers []string          `yaml:"maintainers"`
+	Tags        map[string]string `yaml:"tags"`
+	Env         map[string]string `yaml:"env"`
+	Prepare     string            `yaml:"prepare"`
+	Run         []Run             `yaml:"run"`
+	Check       string            `yaml:"check"`
 
 	me    *Scenario
 	input *doScenarioInput
@@ -141,11 +147,12 @@ func (s *Scenario) WriteScript(file, contents string) (string, error) {
 	return file, err
 }
 
-// LoggerReporter interface for httpexpect.
+//Logf interface for httpexpect.
 func (s Scenario) Logf(fmt string, args ...interface{}) {
 	log.Printf(fmt, args...)
 }
 
+//Errorf returns formatted error message
 func (s Scenario) Errorf(message string, args ...interface{}) {
 	m := fmt.Sprintf(message, args...)
 	s.me.errs = append(s.me.errs, fmt.Errorf(m))
@@ -226,9 +233,9 @@ func doScenario(in *doScenarioInput) error {
 
 			// Parse url.
 			fn := fmt.Sprintf("%v_url", prefix)
-			nv, err := s.ParseValue(run.Http.Url, fn)
+			nv, err := s.ParseValue(run.HTTP.URL, fn)
 			if err != nil {
-				s.errs = append(s.errs, errors.Wrapf(err, "ParseValue[%v]: %v", i, run.Http.Url))
+				s.errs = append(s.errs, errors.Wrapf(err, "ParseValue[%v]: %v", i, run.HTTP.URL))
 				continue
 			}
 
@@ -239,8 +246,8 @@ func doScenario(in *doScenarioInput) error {
 			}
 
 			e := httpexpect.New(s, u.Scheme+"://"+u.Host)
-			req := e.Request(run.Http.Method, u.Path)
-			for k, v := range run.Http.Headers {
+			req := e.Request(run.HTTP.Method, u.Path)
+			for k, v := range run.HTTP.Headers {
 				fn := fmt.Sprintf("%v_hdr.%v", prefix, k)
 				nv, err := s.ParseValue(v, fn)
 				if err != nil {
@@ -252,48 +259,57 @@ func doScenario(in *doScenarioInput) error {
 				log.Printf("[header] %v: %v", k, nv)
 			}
 
-			for k, v := range run.Http.QueryParams {
+			for k, v := range run.HTTP.QueryParams {
 				fn := fmt.Sprintf("%v_qparams.%v", prefix, k)
 				nv, _ := s.ParseValue(v, fn)
 				req = req.WithQuery(k, nv)
 			}
 
-			for k, v := range run.Http.Forms {
+			if len(run.HTTP.Files) > 0 {
+				req = req.WithMultipart()
+			}
+			for k, v := range run.HTTP.Files {
+				fn := fmt.Sprintf("%v_files.%v", prefix, k)
+				nv, _ := s.ParseValue(v, fn)
+				req = req.WithFile(k, nv)
+			}
+
+			for k, v := range run.HTTP.Forms {
 				fn := fmt.Sprintf("%v_forms.%v", prefix, k)
 				nv, _ := s.ParseValue(v, fn)
 				req = req.WithFormField(k, nv)
 			}
 
-			if run.Http.Payload != "" {
+			if run.HTTP.Payload != "" {
 				fn := fmt.Sprintf("%v_payload", prefix)
-				nv, _ := s.ParseValue(run.Http.Payload, fn)
+				nv, _ := s.ParseValue(run.HTTP.Payload, fn)
 				req = req.WithBytes([]byte(nv))
 			}
 
 			resp := req.Expect()
-			if run.Http.ResponseOut != "" {
+			if run.HTTP.ResponseOut != "" {
 				body := resp.Body().Raw()
-				s.Write(run.Http.ResponseOut, []byte(body))
+				s.Write(run.HTTP.ResponseOut, []byte(body))
 				log.Printf("[response] %v", body)
 			}
 
-			if run.Http.Asserts == nil {
+			if run.HTTP.Asserts == nil {
 				continue
 			}
 
-			resp = resp.Status(run.Http.Asserts.Code)
+			resp = resp.Status(run.HTTP.Asserts.Code)
 
-			if run.Http.Asserts.ValidateJSON != "" {
-				resp.JSON().Schema(run.Http.Asserts.ValidateJSON)
+			if run.HTTP.Asserts.ValidateJSON != "" {
+				resp.JSON().Schema(run.HTTP.Asserts.ValidateJSON)
 			}
 
-			if run.Http.Asserts.Script != "" {
+			if run.HTTP.Asserts.Script != "" {
 				fn := fmt.Sprintf("%v_assertscript", prefix)
-				s.WriteScript(fn, run.Http.Asserts.Script)
+				s.WriteScript(fn, run.HTTP.Asserts.Script)
 				b, err := s.RunScript(fn)
 				if err != nil {
 					s.errs = append(s.errs, errors.Wrapf(err,
-						"assert.script[%v]:\n%v: %v", i, run.Http.Asserts.Script, string(b)))
+						"assert.script[%v]:\n%v: %v", i, run.HTTP.Asserts.Script, string(b)))
 				} else {
 					if len(string(b)) > 0 {
 						log.Printf("asserts.script[%v]:\n%v", i, string(b))
@@ -329,7 +345,7 @@ func doScenario(in *doScenarioInput) error {
 						{
 							Color:     "danger",
 							Title:     fmt.Sprintf("%v - failure", filepath.Base(f)),
-							Text:      fmt.Sprintf("%v", s.errs),
+							Text:      fmt.Sprintf("Maintainers: %v\n%v", strings.Join(s.Maintainers, ", "), s.errs),
 							Footer:    "oops",
 							Timestamp: time.Now().Unix(),
 						},

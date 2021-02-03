@@ -6,6 +6,7 @@ import (
 	"net/http"
 )
 
+//SlackAttachment represents Slack Attachment structure for Slack API
 type SlackAttachment struct {
 	// Fallback is our simple fallback text equivalent.
 	Fallback string `json:"fallback"`
@@ -36,17 +37,19 @@ type SlackAttachment struct {
 	Timestamp int64 `json:"ts,omitempty"`
 }
 
+//SlackMessage represents Slack message structure for Slack API
 type SlackMessage struct {
 	Attachments []SlackAttachment `json:"attachments"`
 }
 
-func (sn *SlackMessage) Notify(slackUrl string) error {
+//Notify post the message via Slack API
+func (sn *SlackMessage) Notify(slackURL string) error {
 	bp, err := json.Marshal(sn)
 	if err != nil {
 		return err
 	}
 
-	_, err = http.Post(slackUrl, "application/json", bytes.NewBuffer(bp))
+	_, err = http.Post(slackURL, "application/json", bytes.NewBuffer(bp))
 	if err != nil {
 		return err
 	}
