@@ -82,7 +82,7 @@ func combineFilesAndDir() []string {
 		tmp[f] = struct{}{}
 	}
 
-	walkErr := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -95,13 +95,15 @@ func combineFilesAndDir() []string {
 
 		return nil
 	})
-	if walkErr != nil {
-		log.Fatalf("Filepath walk failed: %v", walkErr)
-	}
 
 	var final []string
 	for k := range tmp {
-		final = append(final, k)
+		_, err := os.Stat(k)
+		if os.IsNotExist(err) {
+			log.Printf("File does not exist: %v", k)
+		} else {
+			final = append(final, k)
+		}
 	}
 
 	if len(final) == 0 {
