@@ -1,5 +1,3 @@
-# OOPS
-
 ![main](https://github.com/flowerinthenight/oops/workflows/main/badge.svg)
 
 ## Overview
