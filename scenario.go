@@ -53,11 +53,12 @@ type ReportPubsub struct {
 
 // Scenario represents a single scenario file to run.
 type Scenario struct {
-	Tags    map[string]string `yaml:"tags"`
-	Env     map[string]string `yaml:"env"`
-	Prepare string            `yaml:"prepare"`
-	Run     []Run             `yaml:"run"`
-	Check   string            `yaml:"check"`
+	Maintainers []string          `yaml:"maintainers"`
+	Tags        map[string]string `yaml:"tags"`
+	Env         map[string]string `yaml:"env"`
+	Prepare     string            `yaml:"prepare"`
+	Run         []Run             `yaml:"run"`
+	Check       string            `yaml:"check"`
 
 	me    *Scenario
 	input *doScenarioInput
@@ -344,7 +345,7 @@ func doScenario(in *doScenarioInput) error {
 						{
 							Color:     "danger",
 							Title:     fmt.Sprintf("%v - failure", filepath.Base(f)),
-							Text:      fmt.Sprintf("%v", s.errs),
+							Text:      fmt.Sprintf("Maintainers: %v\n%v", strings.Join(s.Maintainers, ", "), s.errs),
 							Footer:    "oops",
 							Timestamp: time.Now().Unix(),
 						},
