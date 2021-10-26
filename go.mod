@@ -3,8 +3,10 @@ module github.com/alphauslabs/oops
 go 1.14
 
 require (
+	cloud.google.com/go/kms v1.1.0 // indirect
+	cloud.google.com/go/pubsub v1.17.1 // indirect
 	github.com/andybalholm/brotli v1.0.1 // indirect
-	github.com/aws/aws-sdk-go v1.40.49
+	github.com/aws/aws-sdk-go v1.41.10
 	github.com/dchest/uniuri v0.0.0-20200228104902-7aecb25e1fe5
 	github.com/fasthttp/websocket v1.4.3 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
@@ -25,5 +27,9 @@ require (
 	github.com/valyala/fasthttp v1.19.0 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
+	golang.org/x/net v0.0.0-20211020060615-d418f374d309 // indirect
+	golang.org/x/sys v0.0.0-20211025201205-69cdffdb9359 // indirect
+	google.golang.org/api v0.59.0 // indirect
+	google.golang.org/genproto v0.0.0-20211021150943-2b146023228c // indirect
 	gopkg.in/yaml.v2 v2.4.0
 )
