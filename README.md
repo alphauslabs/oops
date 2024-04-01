@@ -1,4 +1,4 @@
-![main](https://github.com/flowerinthenight/oops/workflows/main/badge.svg)
+[![main](https://github.com/alphauslabs/oops/actions/workflows/main.yml/badge.svg)](https://github.com/alphauslabs/oops/actions/workflows/main.yml)
 
 ## Overview
 
