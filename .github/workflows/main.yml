@@ -32,7 +32,7 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       with:
         distribution: goreleaser
-        version: latest
+        version: 1.23.0
         args: release --clean
       env:
         GITHUB_TOKEN: ${{ secrets.GH_PAT }}
