@@ -20,7 +20,7 @@ release:
     owner: alphauslabs
     name: oops
 brews:
-- tap:
+- repository:
     owner: alphauslabs
     name: homebrew-tap
   name: oops
