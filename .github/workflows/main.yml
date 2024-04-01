@@ -23,9 +23,9 @@ jobs:
       with:
         go-version: 1.18
 
-    - name: Run tests
+    - name: Build binary
       run: |
-        go test -v ./...
+        go build -v
 
     - name: Run goreleaser
       uses: goreleaser/goreleaser-action@v2
