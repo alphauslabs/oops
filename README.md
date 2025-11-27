@@ -148,8 +148,6 @@ check: |
 
 Example [scenario files](https://github.com/flowerinthenight/oops/tree/master/examples) are provided for reference as well. You can run them as is.
 
----
-
 ## TODO
 
 - [ ] Parsing and assertions for response JSON payloads
