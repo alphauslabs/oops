@@ -152,8 +152,6 @@ Example [scenario files](https://github.com/flowerinthenight/oops/tree/master/ex
 
 ## TODO
 
-PR's are welcome!
-
 - [ ] Parsing and assertions for response JSON payloads
 - [x] Labels/tags for filtering what tests to run
 - [x] Support for other scripting engines other than `bash/sh`, i.e. Python
