@@ -21,7 +21,7 @@ import (
 	"github.com/dchest/uniuri"
 	lssqs "github.com/flowerinthenight/longsub/awssqs"
 	lspubsub "github.com/flowerinthenight/longsub/gcppubsub"
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -114,7 +114,7 @@ func combineFilesAndDir() []string {
 }
 
 func distributePubsub(app *appctx) {
-	id := fmt.Sprintf("%s", uuid.NewV4())
+	id := uuid.NewString()
 	final := combineFilesAndDir()
 	for _, f := range final {
 		nc := cmd{
@@ -145,7 +145,7 @@ func distributeSQS(app *appctx) {
 		svc = sns.New(sess)
 	}
 
-	id := fmt.Sprintf("%s", uuid.NewV4())
+	id := uuid.NewString()
 	final := combineFilesAndDir()
 	for _, f := range final {
 		nc := cmd{

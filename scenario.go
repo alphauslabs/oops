@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -13,19 +12,19 @@ import (
 
 	"github.com/dchest/uniuri"
 	"github.com/gavv/httpexpect/v2"
+	yaml "github.com/goccy/go-yaml"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	uuid "github.com/satori/go.uuid"
-	"gopkg.in/yaml.v2"
 )
 
-//Asserts represents acceptance criteria for a test case
+// Asserts represents acceptance criteria for a test case
 type Asserts struct {
 	Code         int    `yaml:"status_code"`
 	ValidateJSON string `yaml:"validate_json"`
 	Script       string `yaml:"script"`
 }
 
-//RunHTTP represents configuration on how to run HTTP test
+// RunHTTP represents configuration on how to run HTTP test
 type RunHTTP struct {
 	Method      string            `yaml:"method"`
 	URL         string            `yaml:"url"`
@@ -38,12 +37,12 @@ type RunHTTP struct {
 	Asserts     *Asserts          `yaml:"asserts"`
 }
 
-//Run represent methods for testing
+// Run represent methods for testing
 type Run struct {
 	HTTP RunHTTP `yaml:"http"`
 }
 
-//ReportPubsub represents configuration to report to pubsub
+// ReportPubsub represents configuration to report to pubsub
 type ReportPubsub struct {
 	Scenario   string            `json:"scenario"`
 	Attributes map[string]string `json:"attributes"` // [status]=success|error
@@ -110,7 +109,7 @@ func (s *Scenario) RunScript(file string) ([]byte, error) {
 // Otherwise, return the contents as is.
 func (s *Scenario) ParseValue(contents string, file ...string) (string, error) {
 	if strings.HasPrefix(contents, "#!") {
-		f := fmt.Sprintf("oops_%v", uuid.NewV4())
+		f := fmt.Sprintf("oops_%v", uuid.NewString())
 		f = filepath.Join(os.TempDir(), f)
 		if len(file) > 0 {
 			f = file[0]
@@ -130,7 +129,7 @@ func (s *Scenario) ParseValue(contents string, file ...string) (string, error) {
 
 // Write writes b to file.
 func (s *Scenario) Write(file string, b []byte) error {
-	return ioutil.WriteFile(file, b, 0644)
+	return os.WriteFile(file, b, 0644)
 }
 
 // WriteScript writes contents to file as an executable.
@@ -147,12 +146,12 @@ func (s *Scenario) WriteScript(file, contents string) (string, error) {
 	return file, err
 }
 
-//Logf interface for httpexpect.
+// Logf interface for httpexpect.
 func (s Scenario) Logf(fmt string, args ...interface{}) {
 	log.Printf(fmt, args...)
 }
 
-//Errorf returns formatted error message
+// Errorf returns formatted error message
 func (s Scenario) Errorf(message string, args ...interface{}) {
 	m := fmt.Sprintf(message, args...)
 	s.me.errs = append(s.me.errs, fmt.Errorf(m))
@@ -192,7 +191,7 @@ func isAllowed(s *Scenario) bool {
 
 func doScenario(in *doScenarioInput) error {
 	for _, f := range in.ScenarioFiles {
-		yml, err := ioutil.ReadFile(f)
+		yml, err := os.ReadFile(f)
 		if err != nil {
 			continue
 		}

@@ -7,10 +7,10 @@ require (
 	github.com/dchest/uniuri v1.2.0
 	github.com/flowerinthenight/longsub v1.6.0
 	github.com/gavv/httpexpect/v2 v2.17.0
+	github.com/goccy/go-yaml v1.19.0
+	github.com/google/uuid v1.6.0
 	github.com/pkg/errors v0.9.1
-	github.com/satori/go.uuid v1.2.0
 	github.com/spf13/cobra v1.10.1
-	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -34,7 +34,6 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.2 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
