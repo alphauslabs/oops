@@ -10,7 +10,7 @@ You can install the binary and run local scenario file(s). This is useful for te
 
 ```bash
 # Install the binary.
-$ brew install mobingi/tap/oops
+$ brew install alphauslabs/tap/oops
 
 # Run a single scenario file.
 $ oops -s ./examples/01-simple.yaml
