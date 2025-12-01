@@ -32,7 +32,7 @@ It is recommended that your scenario files are isolated at the file level. That 
 
 Although this tool was built to run on k8s, it will work just fine in any environment as long as the workload can be distributed properly using the currently supported pubsub services.
 
-An example [`deployment.yaml`](https://github.com/flowerinthenight/oops/blob/master/deployment.yaml) for k8s using GCP PubSub is provided for reference. Make sure to update the relevant values for your own setup.
+An example [`deployment.yaml`](https://github.com/alphauslabs/oops/blob/master/deployment.yaml) for k8s using GCP PubSub is provided for reference. Make sure to update the relevant values for your own setup.
 
 ## Scenario file
 
@@ -146,7 +146,7 @@ check: |
   echo "check"
 ```
 
-Example [scenario files](https://github.com/flowerinthenight/oops/tree/master/examples) are provided for reference as well. You can run them as is.
+Example [scenario files](https://github.com/alphauslabs/oops/tree/master/examples) are provided for reference as well. You can run them as is.
 
 ## TODO
 
