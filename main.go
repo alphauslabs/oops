@@ -346,7 +346,7 @@ func runCmd() *cobra.Command {
 			go run(ctx, done)
 
 			go func() {
-				sigch := make(chan os.Signal)
+				sigch := make(chan os.Signal, 1)
 				signal.Notify(sigch, syscall.SIGINT, syscall.SIGTERM)
 				log.Println(<-sigch)
 				cancel()
@@ -356,12 +356,14 @@ func runCmd() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().SortFlags = false
 	cmd.Flags().StringVar(&snssqs, "snssqs", snssqs, "name of the SNS topic and SQS queue")
 	cmd.Flags().StringVar(&pubsub, "pubsub", pubsub, "name of the GCP pubsub and subscription")
 	return cmd
 }
 
 func init() {
+	rootcmd.PersistentFlags().SortFlags = false
 	rootcmd.PersistentFlags().StringVar(&project, "project-id", os.Getenv("GCP_PROJECT_ID"), "GCP project id")
 	rootcmd.PersistentFlags().StringVar(&region, "region", os.Getenv("AWS_REGION"), "AWS region")
 	rootcmd.PersistentFlags().StringVar(&key, "aws-key", os.Getenv("AWS_ACCESS_KEY_ID"), "AWS access key")
