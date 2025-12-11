@@ -178,7 +178,7 @@ type appctx struct {
 }
 
 // Our message processing callback.
-func process(ctx interface{}, data []byte) error {
+func process(ctx any, data []byte) error {
 	app := ctx.(*appctx)
 	app.mtx.Lock()
 	defer app.mtx.Unlock()
@@ -190,8 +190,8 @@ func process(ctx interface{}, data []byte) error {
 		return err
 	}
 
-	switch {
-	case c.Code == "start":
+	switch c.Code {
+	case "start":
 		var dist string
 		switch {
 		case pubsub != "":
@@ -224,7 +224,7 @@ func process(ctx interface{}, data []byte) error {
 				log.Printf("Notify (slack) failed: %v", err)
 			}
 		}
-	case c.Code == "process":
+	case "process":
 		log.Printf("process: %+v", c)
 		doScenario(&doScenarioInput{
 			app:           app,

@@ -147,12 +147,12 @@ func (s *Scenario) WriteScript(file, contents string) (string, error) {
 }
 
 // Logf interface for httpexpect.
-func (s Scenario) Logf(fmt string, args ...interface{}) {
+func (s Scenario) Logf(fmt string, args ...any) {
 	log.Printf(fmt, args...)
 }
 
 // Errorf returns formatted error message
-func (s Scenario) Errorf(message string, args ...interface{}) {
+func (s Scenario) Errorf(message string, args ...any) {
 	m := fmt.Sprintf(message, args...)
 	s.me.errs = append(s.me.errs, fmt.Errorf(m))
 	log.Printf(message, args...)
