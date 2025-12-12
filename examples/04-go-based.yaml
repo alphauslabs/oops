@@ -1,0 +1,3 @@
+run: |
+  #!/bin/bash
+  oopstctl ripple --logtostderr --test="getUsers"
