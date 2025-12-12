@@ -21,6 +21,7 @@ import (
 	"github.com/dchest/uniuri"
 	lssqs "github.com/flowerinthenight/longsub/awssqs"
 	lspubsub "github.com/flowerinthenight/longsub/gcppubsub"
+	yaml "github.com/goccy/go-yaml"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -113,10 +114,42 @@ func combineFilesAndDir() []string {
 	return final
 }
 
+func filterScenariosByTags(files []string) []string {
+	if len(tags) == 0 {
+		return files
+	}
+
+	var filtered []string
+	for _, f := range files {
+		yml, err := os.ReadFile(f)
+		if err != nil {
+			log.Printf("failed to read file %v: %v", f, err)
+			continue
+		}
+
+		var s Scenario
+		err = yaml.Unmarshal(yml, &s)
+		if err != nil {
+			log.Printf("failed to unmarshal yaml %v: %v", f, err)
+			continue
+		}
+
+		if isAllowed(&s) {
+			filtered = append(filtered, f)
+		} else {
+			log.Printf("%v filtered out by tags", f)
+		}
+	}
+
+	return filtered
+}
+
 func distributePubsub(app *appctx) {
 	id := uuid.NewString()
 	final := combineFilesAndDir()
-	for _, f := range final {
+	filtered := filterScenariosByTags(final)
+	log.Printf("distributing %d/%d scenarios matching tags", len(filtered), len(final))
+	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
 			ID:       id,
@@ -147,7 +180,9 @@ func distributeSQS(app *appctx) {
 
 	id := uuid.NewString()
 	final := combineFilesAndDir()
-	for _, f := range final {
+	filtered := filterScenariosByTags(final)
+	log.Printf("distributing %d/%d scenarios matching tags", len(filtered), len(final))
+	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
 			ID:       id,
