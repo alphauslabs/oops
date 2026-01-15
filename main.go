@@ -54,9 +54,10 @@ var (
 )
 
 type cmd struct {
-	// Valid values: start | process
+	// Valid values: start | process | cancel
 	// start = initiate distribution of files in --dir to SNS
 	// process = normal processing (one yaml at a time)
+	// cancel = cancel running tests for a specific PR/branch
 	Code string `json:"code"`
 
 	// To identify a batch. Sent by the initiator together with
@@ -69,6 +70,9 @@ type cmd struct {
 	// Optional tags to filter scenarios. Format: ["key=value", "key2=value2"]
 	// When provided with 'start' code, only scenarios matching ALL tags will be distributed.
 	Tags []string `json:"tags,omitempty"`
+
+	// Metadata for cancellation requests
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 func runE(cmd *cobra.Command, args []string) error {
@@ -170,7 +174,7 @@ func isAllowedWithTags(s *Scenario, tagFilters []string) bool {
 	return matched == len(tagFilters)
 }
 
-func distributePubsub(app *appctx, tagFilters []string) {
+func distributePubsub(app *appctx, tagFilters []string, metadata map[string]interface{}) {
 	id := uuid.NewString()
 	final := combineFilesAndDir()
 	filtered := filterScenariosByTags(final, tagFilters)
@@ -180,6 +184,7 @@ func distributePubsub(app *appctx, tagFilters []string) {
 			Code:     "process",
 			ID:       id,
 			Scenario: f,
+			Metadata: metadata,
 		}
 
 		err := app.pub.Publish(uniuri.NewLen(10), nc)
@@ -190,7 +195,7 @@ func distributePubsub(app *appctx, tagFilters []string) {
 	}
 }
 
-func distributeSQS(app *appctx, tagFilters []string) {
+func distributeSQS(app *appctx, tagFilters []string, metadata map[string]interface{}) {
 	sess, _ := session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(key, secret, ""),
@@ -213,6 +218,7 @@ func distributeSQS(app *appctx, tagFilters []string) {
 			Code:     "process",
 			ID:       id,
 			Scenario: f,
+			Metadata: metadata,
 		}
 
 		b, _ := json.Marshal(nc)
@@ -236,6 +242,8 @@ type appctx struct {
 	rpub     *lspubsub.PubsubPublisher // topic to publish reports
 	mtx      *sync.Mutex
 	topicArn *string
+	runningTests map[string]context.CancelFunc // key: pr_number or branch and track running tests by PR/branch for cancellation
+	testsMtx     *sync.Mutex
 }
 
 // Our message processing callback.
@@ -257,10 +265,10 @@ func process(ctx any, data []byte) error {
 		var dist string
 		switch {
 		case pubsub != "":
-			distributePubsub(app, c.Tags)
+			distributePubsub(app, c.Tags, c.Metadata)
 			dist = fmt.Sprintf("pubsub=%v", pubsub)
 		case snssqs != "":
-			distributeSQS(app, c.Tags)
+			distributeSQS(app, c.Tags, c.Metadata)
 			dist = snssqs
 			dist = fmt.Sprintf("sns/sqs=%v", snssqs)
 		}
@@ -286,6 +294,52 @@ func process(ctx any, data []byte) error {
 				log.Printf("Notify (slack) failed: %v", err)
 			}
 		}
+	case "cancel":
+		log.Printf("received cancel command: %+v", c.Metadata)
+		
+		// Extract PR number or branch from metadata
+		var cancelKey string
+		if c.Metadata != nil {
+			if prNum, ok := c.Metadata["pr_number"].(string); ok && prNum != "" {
+				cancelKey = fmt.Sprintf("pr_%s", prNum)
+			} else if branch, ok := c.Metadata["branch"].(string); ok && branch != "" {
+				cancelKey = fmt.Sprintf("branch_%s", branch)
+			}
+		}
+		
+		if cancelKey != "" {
+			app.testsMtx.Lock()
+			if cancelFunc, exists := app.runningTests[cancelKey]; exists {
+				log.Printf("Cancelling running test for: %s", cancelKey)
+				cancelFunc()
+				delete(app.runningTests, cancelKey)
+				
+				// Send to slack, if any.
+				if repslack != "" {
+					payload := SlackMessage{
+						Attachments: []SlackAttachment{
+							{
+								Color:     "warning",
+								Title:     "cancelled tests",
+								Text:      fmt.Sprintf("Tests cancelled for %s", cancelKey),
+								Footer:    "oops",
+								Timestamp: time.Now().Unix(),
+							},
+						},
+					}
+					
+					err = payload.Notify(repslack)
+					if err != nil {
+						log.Printf("Notify (slack) failed: %v", err)
+					}
+				}
+			} else {
+				log.Printf("No running tests found for: %s", cancelKey)
+			}
+			app.testsMtx.Unlock()
+		} else {
+			log.Printf("Invalid cancel request: missing pr_number or branch in metadata")
+		}
 	case "process":
 		log.Printf("process: %+v", c)
 		doScenario(&doScenarioInput{
@@ -294,6 +348,7 @@ func process(ctx any, data []byte) error {
 			ReportSlack:   repslack,
 			ReportPubsub:  reppubsub,
 			Verbose:       verbose,
+			Metadata:      c.Metadata,
 		})
 	}
 
@@ -319,7 +374,11 @@ func run(ctx context.Context, done chan error) {
 		log.Printf("rolearn: %v", rolearn)
 	}
 
-	app := &appctx{mtx: &sync.Mutex{}}
+	app := &appctx{
+		mtx:          &sync.Mutex{},
+		runningTests: make(map[string]context.CancelFunc),
+		testsMtx:     &sync.Mutex{},
+	}
 	ctx0, cancelCtx0 := context.WithCancel(ctx)
 	defer cancelCtx0()
 	done0 := make(chan error, 1)
