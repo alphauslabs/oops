@@ -22,7 +22,6 @@ import (
 	lssqs "github.com/flowerinthenight/longsub/awssqs"
 	lspubsub "github.com/flowerinthenight/longsub/gcppubsub"
 	yaml "github.com/goccy/go-yaml"
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -198,8 +197,8 @@ func isAllowedWithTags(s *Scenario, tagFilters []string) bool {
 	return matched == len(tagFilters)
 }
 
-func distributePubsub(app *appctx, tagFilters []string, metadata map[string]interface{}) {
-	id := uuid.NewString()
+func distributePubsub(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) {
+	id := runID
 	final := combineFilesAndDir()
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
@@ -219,7 +218,7 @@ func distributePubsub(app *appctx, tagFilters []string, metadata map[string]inte
 	}
 }
 
-func distributeSQS(app *appctx, tagFilters []string, metadata map[string]interface{}) {
+func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) {
 	sess, _ := session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(key, secret, ""),
@@ -233,7 +232,7 @@ func distributeSQS(app *appctx, tagFilters []string, metadata map[string]interfa
 		svc = sns.New(sess)
 	}
 
-	id := uuid.NewString()
+	id := runID
 	final := combineFilesAndDir()
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
@@ -287,10 +286,10 @@ func process(ctx any, data []byte) error {
 		var dist string
 		switch {
 		case pubsub != "":
-			distributePubsub(app, c.Tags, c.Metadata)
+			distributePubsub(app, c.ID, c.Tags, c.Metadata)
 			dist = fmt.Sprintf("pubsub=%v", pubsub)
 		case snssqs != "":
-			distributeSQS(app, c.Tags, c.Metadata)
+			distributeSQS(app, c.ID, c.Tags, c.Metadata)
 			dist = snssqs
 			dist = fmt.Sprintf("sns/sqs=%v", snssqs)
 		}
@@ -325,6 +324,7 @@ func process(ctx any, data []byte) error {
 			ReportPubsub:  reppubsub,
 			Verbose:       verbose,
 			Metadata:      c.Metadata,
+			RunID:         c.ID,
 		})
 	}
 

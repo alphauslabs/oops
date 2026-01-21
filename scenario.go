@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dchest/uniuri"
 	"github.com/gavv/httpexpect/v2"
 	yaml "github.com/goccy/go-yaml"
 	"github.com/google/uuid"
@@ -48,7 +48,8 @@ type ReportPubsub struct {
 	Attributes map[string]string `json:"attributes"` // [status]=success|error
 	Status     string            `json:"status"`     // success|error
 	Data       string            `json:"data"`
-	MessageID  string            `json:"message_id"` // Unique message ID for tracking
+	MessageID  string            `json:"message_id"` // Unique oops-generated tracking ID
+	RunID      string            `json:"run_id"`     // Batch run ID from the initiating workflow
 }
 
 // Scenario represents a single scenario file to run.
@@ -167,6 +168,7 @@ type doScenarioInput struct {
 	ReportPubsub  string
 	Verbose       bool
 	Metadata      map[string]interface{}
+	RunID         string
 }
 
 func isAllowed(s *Scenario) bool {
@@ -396,11 +398,13 @@ func doScenario(in *doScenarioInput) error {
 					attr["pubsub"] = pubsub
 				}
 				if in.Metadata != nil {
-					if prNum, ok := in.Metadata["pr_number"].(string); ok && prNum != "" {
-						attr["pr_number"] = prNum
+					for _, key := range []string{"pr_number", "branch", "commit_sha", "actor", "trigger_type", "run_url", "repository", "workflow"} {
+						if v, ok := in.Metadata[key].(string); ok && v != "" {
+							attr[key] = v
+						}
 					}
-					if branch, ok := in.Metadata["branch"].(string); ok && branch != "" {
-						attr["branch"] = branch
+					if b, err := json.Marshal(in.Metadata); err == nil {
+						attr["metadata"] = string(b)
 					}
 				}
 
@@ -409,7 +413,8 @@ func doScenario(in *doScenarioInput) error {
 					Attributes: attr,
 					Status:     status,
 					Data:       data,
-					MessageID:  uniuri.NewLen(10),
+					MessageID:  uuid.NewString(),
+					RunID:      in.RunID,
 				}
 
 				err := in.app.rpub.Publish(r.MessageID, r)
