@@ -412,7 +412,7 @@ func doScenario(in *doScenarioInput) error {
 						{
 							Color:     "warning",
 							Title:     fmt.Sprintf("%v - cancelled", filepath.Base(f)),
-							Text:      fmt.Sprintf("Test execution was cancelled (PR closed or manually cancelled)\nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
+							Text:      fmt.Sprintf("Test execution was cancelled (PR closed )\nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
 							Footer:    "oops",
 							Timestamp: time.Now().Unix(),
 						},
@@ -477,7 +477,7 @@ func doScenario(in *doScenarioInput) error {
 				
 				if wasCancelled {
 					status = "cancelled"
-					data = "Test execution was cancelled (PR closed or manually cancelled)"
+					data = "Test execution was cancelled (PR closed)"
 				} else if len(s.errs) > 0 {
 					status = "error"
 					data = fmt.Sprintf("%v", s.errs)
