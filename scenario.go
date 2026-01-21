@@ -448,7 +448,7 @@ func doScenario(in *doScenarioInput) error {
 						{
 							Color:     "good",
 							Title:     fmt.Sprintf("%v - success", filepath.Base(f)),
-							Text:      fmt.Sprintf("All tests passed! ✅\nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
+							Text:      fmt.Sprintf("All tests passed! \nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
 							Footer:    "oops",
 							Timestamp: time.Now().Unix(),
 						},
