@@ -49,6 +49,7 @@ type ReportPubsub struct {
 	Attributes map[string]string `json:"attributes"` // [status]=success|error
 	Status     string            `json:"status"`     // success|error
 	Data       string            `json:"data"`
+	MessageID  string            `json:"message_id"` // Unique message ID for tracking
 }
 
 // Scenario represents a single scenario file to run.
@@ -504,9 +505,10 @@ func doScenario(in *doScenarioInput) error {
 					Attributes: attr,
 					Status:     status,
 					Data:       data,
+					MessageID:  uniuri.NewLen(10),
 				}
 
-				err := in.app.rpub.Publish(uniuri.NewLen(10), r)
+				err := in.app.rpub.Publish(r.MessageID, r)
 				if err != nil {
 					log.Printf("Publish failed: %v", err)
 				}
