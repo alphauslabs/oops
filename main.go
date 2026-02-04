@@ -117,6 +117,8 @@ func findScenarioFiles(root string) []string {
 		filepath.Join(root, "services", "*", "scenarios"),
 		filepath.Join(root, "cloudrun", "*", "scenarios"),
 		filepath.Join(root, "cronjobs", "*", "scenarios"),
+		filepath.Join(root, "serverless", "*", "scenarios"),
+		filepath.Join(root, "microapps", "*", "scenarios"),
 	}
 
 	var out []string
@@ -512,7 +514,7 @@ func init() {
 	rootcmd.PersistentFlags().StringVar(&secret, "aws-secret", os.Getenv("AWS_SECRET_ACCESS_KEY"), "AWS secret key")
 	rootcmd.PersistentFlags().StringVar(&rolearn, "aws-rolearn", os.Getenv("ROLE_ARN"), "AWS role ARN to assume")
 	rootcmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", verbose, "verbose mode")
-	rootcmd.PersistentFlags().StringVarP(&dir, "dir", "d", dir, "root directory for scenario discovery (services/*/scenarios, cloudrun/*/scenarios, cronjobs/*/scenarios)")
+	rootcmd.PersistentFlags().StringVarP(&dir, "dir", "d", dir, "root directory for scenario discovery (services/*/scenarios, cloudrun/*/scenarios, cronjobs/*/scenarios, serverless/*/scenarios, microapps/*/scenarios)")
 	rootcmd.PersistentFlags().StringVar(&repslack, "report-slack", repslack, "slack url for notification")
 	rootcmd.PersistentFlags().StringVar(&reppubsub, "report-pubsub", reppubsub, "pubsub topic for notification")
 	rootcmd.PersistentFlags().StringSliceVarP(&files, "scenarios", "s", files, "scenario file[s] to run, comma-separated, or multiple -s")
