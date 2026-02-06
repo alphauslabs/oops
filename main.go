@@ -91,19 +91,9 @@ func combineFilesAndDir() []string {
 		tmp[f] = struct{}{}
 	}
 
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		f, _ := filepath.Abs(path)
-		log.Printf("input: %v", f)
-		if strings.HasSuffix(f, ".yaml") {
-			tmp[f] = struct{}{}
-		}
-
-		return nil
-	})
+	for _, f := range findScenarioFiles(dir) {
+		tmp[f] = struct{}{}
+	}
 
 	var final []string
 	for k := range tmp {
@@ -120,6 +110,39 @@ func combineFilesAndDir() []string {
 	}
 
 	return final
+}
+
+func findScenarioFiles(root string) []string {
+	patterns := []string{
+		filepath.Join(root, "services", "*", "scenarios"),
+		filepath.Join(root, "cloudrun", "*", "scenarios"),
+		filepath.Join(root, "cronjobs", "*", "scenarios"),
+		filepath.Join(root, "serverless", "*", "scenarios"),
+		filepath.Join(root, "microapps", "*", "scenarios"),
+	}
+
+	var out []string
+	for _, p := range patterns {
+		dirs, err := filepath.Glob(p)
+		if err != nil {
+			log.Printf("glob %v: %v", p, err)
+			continue
+		}
+		for _, d := range dirs {
+			filepath.Walk(d, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !info.IsDir() && strings.HasSuffix(path, ".yaml") {
+					abs, _ := filepath.Abs(path)
+					log.Printf("input: %v", abs)
+					out = append(out, abs)
+				}
+				return nil
+			})
+		}
+	}
+	return out
 }
 
 func filterScenariosByTags(files []string, tagFilters []string) []string {
@@ -491,7 +514,7 @@ func init() {
 	rootcmd.PersistentFlags().StringVar(&secret, "aws-secret", os.Getenv("AWS_SECRET_ACCESS_KEY"), "AWS secret key")
 	rootcmd.PersistentFlags().StringVar(&rolearn, "aws-rolearn", os.Getenv("ROLE_ARN"), "AWS role ARN to assume")
 	rootcmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", verbose, "verbose mode")
-	rootcmd.PersistentFlags().StringVarP(&dir, "dir", "d", dir, "root directory for scenario file[s]")
+	rootcmd.PersistentFlags().StringVarP(&dir, "dir", "d", dir, "root directory for scenario discovery (services/*/scenarios, cloudrun/*/scenarios, cronjobs/*/scenarios, serverless/*/scenarios, microapps/*/scenarios)")
 	rootcmd.PersistentFlags().StringVar(&repslack, "report-slack", repslack, "slack url for notification")
 	rootcmd.PersistentFlags().StringVar(&reppubsub, "report-pubsub", reppubsub, "pubsub topic for notification")
 	rootcmd.PersistentFlags().StringSliceVarP(&files, "scenarios", "s", files, "scenario file[s] to run, comma-separated, or multiple -s")

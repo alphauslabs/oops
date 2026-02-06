@@ -49,6 +49,7 @@ type ReportPubsub struct {
 	Attributes map[string]string `json:"attributes"` // [status]=success|error
 	Status     string            `json:"status"`     // success|error
 	Data       string            `json:"data"`
+	MessageID  string            `json:"message_id"` // Unique message ID for tracking
 }
 
 // Scenario represents a single scenario file to run.
@@ -411,7 +412,7 @@ func doScenario(in *doScenarioInput) error {
 						{
 							Color:     "warning",
 							Title:     fmt.Sprintf("%v - cancelled", filepath.Base(f)),
-							Text:      fmt.Sprintf("Test execution was cancelled (PR closed or manually cancelled)\nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
+							Text:      fmt.Sprintf("Test execution was cancelled (PR closed )\nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
 							Footer:    "oops",
 							Timestamp: time.Now().Unix(),
 						},
@@ -447,7 +448,7 @@ func doScenario(in *doScenarioInput) error {
 						{
 							Color:     "good",
 							Title:     fmt.Sprintf("%v - success", filepath.Base(f)),
-							Text:      fmt.Sprintf("All tests passed! ✅\nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
+							Text:      fmt.Sprintf("All tests passed! \nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
 							Footer:    "oops",
 							Timestamp: time.Now().Unix(),
 						},
@@ -476,7 +477,7 @@ func doScenario(in *doScenarioInput) error {
 				
 				if wasCancelled {
 					status = "cancelled"
-					data = "Test execution was cancelled (PR closed or manually cancelled)"
+					data = "Test execution was cancelled (PR closed)"
 				} else if len(s.errs) > 0 {
 					status = "error"
 					data = fmt.Sprintf("%v", s.errs)
@@ -504,9 +505,10 @@ func doScenario(in *doScenarioInput) error {
 					Attributes: attr,
 					Status:     status,
 					Data:       data,
+					MessageID:  uniuri.NewLen(10),
 				}
 
-				err := in.app.rpub.Publish(uniuri.NewLen(10), r)
+				err := in.app.rpub.Publish(r.MessageID, r)
 				if err != nil {
 					log.Printf("Publish failed: %v", err)
 				}
