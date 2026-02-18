@@ -497,28 +497,21 @@ func doScenario(in *doScenarioInput) error {
 					if idVal, ok := in.Metadata["id"]; ok {
 						if idStr, ok := idVal.(string); ok {
 							runID = idStr
-							log.Printf("DEBUG: Extracted run_id from metadata: %s", runID)
+						}
+					}
+					for k, v := range in.Metadata {
+						if k == "test_analysis" {
+							continue 
+						}
+						if str, ok := v.(string); ok && str != "" {
+							attr[k] = str
 						}
 					}
 
 					if testAnalysis, ok := in.Metadata["test_analysis"].(map[string]interface{}); ok {
-						if testCount, ok := testAnalysis["test_count"]; ok {
-							attr["test_count"] = fmt.Sprintf("%v", testCount)
-							log.Printf("DEBUG: Added test_count to attributes: %v", testCount)
+						for k, v := range testAnalysis {
+							attr[k] = fmt.Sprintf("%v", v)
 						}
-					}
-
-					if prNum, ok := in.Metadata["pr_number"].(string); ok && prNum != "" {
-						attr["pr_number"] = prNum
-					}
-					if branch, ok := in.Metadata["branch"].(string); ok && branch != "" {
-						attr["branch"] = branch
-					}
-					if repo, ok := in.Metadata["repository"].(string); ok && repo != "" {
-						attr["repository"] = repo
-					}
-					if commitSha, ok := in.Metadata["commit_sha"].(string); ok && commitSha != "" {
-						attr["commit_sha"] = commitSha
 					}
 				}
 				

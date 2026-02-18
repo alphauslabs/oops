@@ -197,11 +197,84 @@ func isAllowedWithTags(s *Scenario, tagFilters []string) bool {
 	return matched == len(tagFilters)
 }
 
-func distributePubsub(app *appctx, tagFilters []string, metadata map[string]interface{}) {
+func extractAffectedServices(metadata map[string]interface{}) []string {
+	if metadata == nil {
+		return nil
+	}
+
+	testAnalysis, ok := metadata["test_analysis"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	raw, ok := testAnalysis["affected_services"]
+	if !ok {
+		return nil
+	}
+
+	str, ok := raw.(string)
+	if !ok || str == "" {
+		return nil
+	}
+
+	var services []string
+	for _, s := range strings.Split(str, ",") {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			services = append(services, s)
+		}
+	}
+
+	return services
+}
+
+func filterScenariosByServices(files []string, services []string) []string {
+	serviceSet := make(map[string]bool)
+	for _, s := range services {
+		serviceSet[s] = true
+	}
+
+	var filtered []string
+	for _, f := range files {
+		normalized := filepath.ToSlash(f)
+		parts := strings.Split(normalized, "/")
+		for i, part := range parts {
+			if part == "scenarios" && i > 0 {
+				serviceName := parts[i-1]
+				if serviceSet[serviceName] {
+					filtered = append(filtered, f)
+				}
+				break
+			}
+		}
+	}
+
+	return filtered
+}
+
+func distributePubsub(app *appctx, tagFilters []string, metadata map[string]interface{}, runID string) {
 	id := uuid.NewString()
 	final := combineFilesAndDir()
 	filtered := filterScenariosByTags(final, tagFilters)
-	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
+	affected := extractAffectedServices(metadata)
+	if len(affected) > 0 {
+		filtered = filterScenariosByServices(filtered, affected)
+		log.Printf("filtered to %d scenarios for affected services: %v", len(filtered), affected)
+	}
+
+	log.Printf("distributing %d scenarios", len(filtered))
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
+	metadata["id"] = runID
+	if testAnalysis, ok := metadata["test_analysis"].(map[string]interface{}); ok {
+		testAnalysis["test_count"] = len(filtered)
+	} else {
+		metadata["test_analysis"] = map[string]interface{}{
+			"test_count": len(filtered),
+		}
+	}
+
 	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
@@ -218,7 +291,7 @@ func distributePubsub(app *appctx, tagFilters []string, metadata map[string]inte
 	}
 }
 
-func distributeSQS(app *appctx, tagFilters []string, metadata map[string]interface{}) {
+func distributeSQS(app *appctx, tagFilters []string, metadata map[string]interface{}, runID string) {
 	sess, _ := session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(key, secret, ""),
@@ -235,7 +308,25 @@ func distributeSQS(app *appctx, tagFilters []string, metadata map[string]interfa
 	id := uuid.NewString()
 	final := combineFilesAndDir()
 	filtered := filterScenariosByTags(final, tagFilters)
-	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
+	affected := extractAffectedServices(metadata)
+	if len(affected) > 0 {
+		filtered = filterScenariosByServices(filtered, affected)
+		log.Printf("filtered to %d scenarios for affected services: %v", len(filtered), affected)
+	}
+
+	log.Printf("distributing %d scenarios", len(filtered))
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
+	metadata["id"] = runID
+	if testAnalysis, ok := metadata["test_analysis"].(map[string]interface{}); ok {
+		testAnalysis["test_count"] = len(filtered)
+	} else {
+		metadata["test_analysis"] = map[string]interface{}{
+			"test_count": len(filtered),
+		}
+	}
+
 	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
@@ -288,10 +379,10 @@ func process(ctx any, data []byte) error {
 		var dist string
 		switch {
 		case pubsub != "":
-			distributePubsub(app, c.Tags, c.Metadata)
+			distributePubsub(app, c.Tags, c.Metadata, c.ID)
 			dist = fmt.Sprintf("pubsub=%v", pubsub)
 		case snssqs != "":
-			distributeSQS(app, c.Tags, c.Metadata)
+			distributeSQS(app, c.Tags, c.Metadata, c.ID)
 			dist = snssqs
 			dist = fmt.Sprintf("sns/sqs=%v", snssqs)
 		}
