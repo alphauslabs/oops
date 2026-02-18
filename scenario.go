@@ -50,6 +50,7 @@ type ReportPubsub struct {
 	Status     string            `json:"status"`     // success|error
 	Data       string            `json:"data"`
 	MessageID  string            `json:"message_id"` // Unique message ID for tracking
+	RunID      string            `json:"run_id"`     // GitHub Action run ID for correlation
 }
 
 // Scenario represents a single scenario file to run.
@@ -491,13 +492,38 @@ func doScenario(in *doScenarioInput) error {
 				if pubsub != "" {
 					attr["pubsub"] = pubsub
 				}
+				runID := ""
 				if in.Metadata != nil {
+					if idVal, ok := in.Metadata["id"]; ok {
+						if idStr, ok := idVal.(string); ok {
+							runID = idStr
+							log.Printf("DEBUG: Extracted run_id from metadata: %s", runID)
+						}
+					}
+
+					if testAnalysis, ok := in.Metadata["test_analysis"].(map[string]interface{}); ok {
+						if testCount, ok := testAnalysis["test_count"]; ok {
+							attr["test_count"] = fmt.Sprintf("%v", testCount)
+							log.Printf("DEBUG: Added test_count to attributes: %v", testCount)
+						}
+					}
+
 					if prNum, ok := in.Metadata["pr_number"].(string); ok && prNum != "" {
 						attr["pr_number"] = prNum
 					}
 					if branch, ok := in.Metadata["branch"].(string); ok && branch != "" {
 						attr["branch"] = branch
 					}
+					if repo, ok := in.Metadata["repository"].(string); ok && repo != "" {
+						attr["repository"] = repo
+					}
+					if commitSha, ok := in.Metadata["commit_sha"].(string); ok && commitSha != "" {
+						attr["commit_sha"] = commitSha
+					}
+				}
+				
+				if runID == "" {
+					log.Printf("WARNING: run_id not found in metadata for scenario %s", f)
 				}
 
 				r := ReportPubsub{
@@ -506,6 +532,7 @@ func doScenario(in *doScenarioInput) error {
 					Status:     status,
 					Data:       data,
 					MessageID:  uniuri.NewLen(10),
+					RunID:      runID,
 				}
 
 				err := in.app.rpub.Publish(r.MessageID, r)
