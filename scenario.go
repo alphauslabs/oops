@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/url"
@@ -64,7 +63,6 @@ type Scenario struct {
 	me    *Scenario
 	input *doScenarioInput
 	errs  []error
-	ctx   context.Context // For cancellation support
 }
 
 func (s Scenario) getHead(file string) ([]byte, error) {
@@ -194,41 +192,7 @@ func isAllowed(s *Scenario) bool {
 }
 
 func doScenario(in *doScenarioInput) error {
-	testCtx, cancelTest := context.WithCancel(context.Background())
-	defer cancelTest()
-	// Register test with appctx if metadata is available
-	var testKey string
-	if in.app != nil && in.Metadata != nil {
-		if prNum, ok := in.Metadata["pr_number"].(string); ok && prNum != "" {
-			testKey = fmt.Sprintf("pr_%s", prNum)
-		} else if branch, ok := in.Metadata["branch"].(string); ok && branch != "" {
-			testKey = fmt.Sprintf("branch_%s", branch)
-		}
-		
-		if testKey != "" {
-			in.app.testsMtx.Lock()
-			in.app.runningTests[testKey] = cancelTest
-			in.app.testsMtx.Unlock()
-			
-			defer func() {
-				in.app.testsMtx.Lock()
-				delete(in.app.runningTests, testKey)
-				in.app.testsMtx.Unlock()
-			}()
-			
-			log.Printf("Registered test for cancellation: %s", testKey)
-		}
-	}
-	
 	for _, f := range in.ScenarioFiles {
-		// Check if context is cancelled before processing each file
-		select {
-		case <-testCtx.Done():
-			log.Printf("Test execution cancelled for scenario: %v", f)
-			return fmt.Errorf("test cancelled")
-		default:
-		}
-		
 		yml, err := os.ReadFile(f)
 		if err != nil {
 			continue
@@ -247,14 +211,7 @@ func doScenario(in *doScenarioInput) error {
 
 		s.me = &s    // self-reference for our LoggerReporter functions
 		s.input = in // our copy
-		s.ctx = testCtx // set context for cancellation
 		log.Printf("scenario: %v", f)
-		select {
-		case <-testCtx.Done():
-			log.Printf("Test execution cancelled during prepare: %v", f)
-			return fmt.Errorf("test cancelled")
-		default:
-		}
 
 		if s.Prepare != "" {
 			basef := filepath.Base(f)
@@ -272,15 +229,6 @@ func doScenario(in *doScenarioInput) error {
 		}
 
 		for i, run := range s.Run {
-			// Check if context is cancelled before each run step
-			select {
-			case <-testCtx.Done():
-				log.Printf("Test execution cancelled during run step %d: %v", i, f)
-				s.errs = append(s.errs, fmt.Errorf("test cancelled during run step %d", i))
-				goto reportResults // Jump to reporting
-			default:
-			}
-			
 			basef := filepath.Base(f)
 			prefix := filepath.Join(os.TempDir(), fmt.Sprintf("%v_run%d", basef, i))
 
@@ -370,13 +318,6 @@ func doScenario(in *doScenarioInput) error {
 				}
 			}
 		}
-		select {
-		case <-testCtx.Done():
-			log.Printf("Test execution cancelled before check step: %v", f)
-			s.errs = append(s.errs, fmt.Errorf("test cancelled before check step"))
-			goto reportResults
-		default:
-		}
 
 		if s.Check != "" {
 			basef := filepath.Base(f)
@@ -393,37 +334,12 @@ func doScenario(in *doScenarioInput) error {
 			}
 		}
 
-	reportResults:
 		if len(s.errs) > 0 {
 			log.Printf("errs: %v", s.errs)
 		}
-		wasCancelled := false
-		select {
-		case <-testCtx.Done():
-			wasCancelled = true
-		default:
-		}
 
 		if in.ReportSlack != "" {
-			if wasCancelled {
-				// Send cancellation notification to slack
-				payload := SlackMessage{
-					Attachments: []SlackAttachment{
-						{
-							Color:     "warning",
-							Title:     fmt.Sprintf("%v - cancelled", filepath.Base(f)),
-							Text:      fmt.Sprintf("Test execution was cancelled (PR closed )\nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
-							Footer:    "oops",
-							Timestamp: time.Now().Unix(),
-						},
-					},
-				}
-
-				err = payload.Notify(in.ReportSlack)
-				if err != nil {
-					log.Printf("Notify (slack) failed: %v", err)
-				}
-			} else if len(s.errs) > 0 {
+			if len(s.errs) > 0 {
 				// Send failure notification to slack
 				payload := SlackMessage{
 					Attachments: []SlackAttachment{
@@ -448,7 +364,7 @@ func doScenario(in *doScenarioInput) error {
 						{
 							Color:     "good",
 							Title:     fmt.Sprintf("%v - success", filepath.Base(f)),
-							Text:      fmt.Sprintf("All tests passed! \nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
+							Text:      fmt.Sprintf(" All tests passed! \nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
 							Footer:    "oops",
 							Timestamp: time.Now().Unix(),
 						},
@@ -466,19 +382,7 @@ func doScenario(in *doScenarioInput) error {
 			if in.app.rpub != nil {
 				status := "success"
 				var data string
-				
-				// Check if test was cancelled
-				wasCancelled := false
-				select {
-				case <-testCtx.Done():
-					wasCancelled = true
-				default:
-				}
-				
-				if wasCancelled {
-					status = "cancelled"
-					data = "Test execution was cancelled (PR closed)"
-				} else if len(s.errs) > 0 {
+				if len(s.errs) > 0 {
 					status = "error"
 					data = fmt.Sprintf("%v", s.errs)
 				}
