@@ -22,7 +22,6 @@ import (
 	lssqs "github.com/flowerinthenight/longsub/awssqs"
 	lspubsub "github.com/flowerinthenight/longsub/gcppubsub"
 	yaml "github.com/goccy/go-yaml"
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -54,10 +53,9 @@ var (
 )
 
 type cmd struct {
-	// Valid values: start | process | cancel
+	// Valid values: start | process
 	// start = initiate distribution of files in --dir to SNS
 	// process = normal processing (one yaml at a time)
-	// cancel = cancel running tests for a specific PR/branch
 	Code string `json:"code"`
 
 	// To identify a batch. Sent by the initiator together with
@@ -119,6 +117,8 @@ func findScenarioFiles(root string) []string {
 		filepath.Join(root, "cronjobs", "*", "scenarios"),
 		filepath.Join(root, "serverless", "*", "scenarios"),
 		filepath.Join(root, "microapps", "*", "scenarios"),
+		filepath.Join(root, "cmd", "*", "scenarios"),
+		filepath.Join(root, "pkg", "*", "scenarios"),
 	}
 
 	var out []string
@@ -197,8 +197,8 @@ func isAllowedWithTags(s *Scenario, tagFilters []string) bool {
 	return matched == len(tagFilters)
 }
 
-func distributePubsub(app *appctx, tagFilters []string, metadata map[string]interface{}) {
-	id := uuid.NewString()
+func distributePubsub(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) {
+	id := runID
 	final := combineFilesAndDir()
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
@@ -218,7 +218,7 @@ func distributePubsub(app *appctx, tagFilters []string, metadata map[string]inte
 	}
 }
 
-func distributeSQS(app *appctx, tagFilters []string, metadata map[string]interface{}) {
+func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) {
 	sess, _ := session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(key, secret, ""),
@@ -232,7 +232,7 @@ func distributeSQS(app *appctx, tagFilters []string, metadata map[string]interfa
 		svc = sns.New(sess)
 	}
 
-	id := uuid.NewString()
+	id := runID
 	final := combineFilesAndDir()
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
@@ -265,8 +265,6 @@ type appctx struct {
 	rpub     *lspubsub.PubsubPublisher // topic to publish reports
 	mtx      *sync.Mutex
 	topicArn *string
-	runningTests map[string]context.CancelFunc // key: pr_number or branch and track running tests by PR/branch for cancellation
-	testsMtx     *sync.Mutex
 }
 
 // Our message processing callback.
@@ -288,10 +286,10 @@ func process(ctx any, data []byte) error {
 		var dist string
 		switch {
 		case pubsub != "":
-			distributePubsub(app, c.Tags, c.Metadata)
+			distributePubsub(app, c.ID, c.Tags, c.Metadata)
 			dist = fmt.Sprintf("pubsub=%v", pubsub)
 		case snssqs != "":
-			distributeSQS(app, c.Tags, c.Metadata)
+			distributeSQS(app, c.ID, c.Tags, c.Metadata)
 			dist = snssqs
 			dist = fmt.Sprintf("sns/sqs=%v", snssqs)
 		}
@@ -317,52 +315,6 @@ func process(ctx any, data []byte) error {
 				log.Printf("Notify (slack) failed: %v", err)
 			}
 		}
-	case "cancel":
-		log.Printf("received cancel command: %+v", c.Metadata)
-		
-		// Extract PR number or branch from metadata
-		var cancelKey string
-		if c.Metadata != nil {
-			if prNum, ok := c.Metadata["pr_number"].(string); ok && prNum != "" {
-				cancelKey = fmt.Sprintf("pr_%s", prNum)
-			} else if branch, ok := c.Metadata["branch"].(string); ok && branch != "" {
-				cancelKey = fmt.Sprintf("branch_%s", branch)
-			}
-		}
-		
-		if cancelKey != "" {
-			app.testsMtx.Lock()
-			if cancelFunc, exists := app.runningTests[cancelKey]; exists {
-				log.Printf("Cancelling running test for: %s", cancelKey)
-				cancelFunc()
-				delete(app.runningTests, cancelKey)
-				
-				// Send to slack, if any.
-				if repslack != "" {
-					payload := SlackMessage{
-						Attachments: []SlackAttachment{
-							{
-								Color:     "warning",
-								Title:     "cancelled tests",
-								Text:      fmt.Sprintf("Tests cancelled for %s", cancelKey),
-								Footer:    "oops",
-								Timestamp: time.Now().Unix(),
-							},
-						},
-					}
-					
-					err = payload.Notify(repslack)
-					if err != nil {
-						log.Printf("Notify (slack) failed: %v", err)
-					}
-				}
-			} else {
-				log.Printf("No running tests found for: %s", cancelKey)
-			}
-			app.testsMtx.Unlock()
-		} else {
-			log.Printf("Invalid cancel request: missing pr_number or branch in metadata")
-		}
 	case "process":
 		log.Printf("process: %+v", c)
 		doScenario(&doScenarioInput{
@@ -372,6 +324,7 @@ func process(ctx any, data []byte) error {
 			ReportPubsub:  reppubsub,
 			Verbose:       verbose,
 			Metadata:      c.Metadata,
+			RunID:         c.ID,
 		})
 	}
 
@@ -398,9 +351,7 @@ func run(ctx context.Context, done chan error) {
 	}
 
 	app := &appctx{
-		mtx:          &sync.Mutex{},
-		runningTests: make(map[string]context.CancelFunc),
-		testsMtx:     &sync.Mutex{},
+		mtx: &sync.Mutex{},
 	}
 	ctx0, cancelCtx0 := context.WithCancel(ctx)
 	defer cancelCtx0()
