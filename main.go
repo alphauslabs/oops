@@ -255,17 +255,19 @@ func filterScenariosByAffectedServices(files []string, affectedServices []string
 	return out
 }
 
-func distributePubsub(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) {
+func distributePubsub(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) bool {
 	id := runID
-	final := combineFilesAndDir()
-
 	affectedServices := extractAffectedServices(metadata)
-	if len(affectedServices) > 0 {
+	if len(affectedServices) == 0 {
+		log.Printf("no affected services in metadata, skipping distribution")
+		return false
+	}
+
 		log.Printf("affected services from metadata: %v", affectedServices)
+		final := combineFilesAndDir()
 		before := len(final)
 		final = filterScenariosByAffectedServices(final, affectedServices)
 		log.Printf("service filter: %d/%d scenarios kept", len(final), before)
-	}
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
@@ -283,9 +285,10 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 			continue
 		}
 	}
+	return true
 }
 
-func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) {
+func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) bool {
 	sess, _ := session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(key, secret, ""),
@@ -299,16 +302,18 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 		svc = sns.New(sess)
 	}
 
+	affectedServices := extractAffectedServices(metadata)
+	if len(affectedServices) == 0 {
+		log.Printf("no affected services in metadata, skipping distribution")
+		return false
+	}
+
+	log.Printf("affected services from metadata: %v", affectedServices)
 	id := runID
 	final := combineFilesAndDir()
-
-	affectedServices := extractAffectedServices(metadata)
-	if len(affectedServices) > 0 {
-		log.Printf("affected services from metadata: %v", affectedServices)
 		before := len(final)
 		final = filterScenariosByAffectedServices(final, affectedServices)
 		log.Printf("service filter: %d/%d scenarios kept", len(final), before)
-	}
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
@@ -334,6 +339,7 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 			continue
 		}
 	}
+	return true
 }
 
 type appctx struct {
@@ -359,15 +365,20 @@ func process(ctx any, data []byte) error {
 	switch c.Code {
 	case "start":
 		log.Printf("received start command with tags: %v", c.Tags)
+		var distributed bool
 		var dist string
 		switch {
 		case pubsub != "":
-			distributePubsub(app, c.ID, c.Tags, c.Metadata)
+			distributed = distributePubsub(app, c.ID, c.Tags, c.Metadata)
 			dist = fmt.Sprintf("pubsub=%v", pubsub)
 		case snssqs != "":
-			distributeSQS(app, c.ID, c.Tags, c.Metadata)
-			dist = snssqs
+			distributed = distributeSQS(app, c.ID, c.Tags, c.Metadata)
 			dist = fmt.Sprintf("sns/sqs=%v", snssqs)
+		}
+
+		if !distributed {
+			log.Printf("no scenarios distributed, skipping slack notification")
+			break
 		}
 
 		host, _ := os.Hostname()
