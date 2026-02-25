@@ -468,7 +468,7 @@ func process(ctx any, data []byte) error {
 								{
 									Color:     "good",
 									Title:     fmt.Sprintf("run complete: %v", c.ID),
-									Text:      "All scenarios for this run have finished.",
+									Text:      "Test scenarios completed.",
 									Footer:    "oops",
 									Timestamp: time.Now().Unix(),
 								},
