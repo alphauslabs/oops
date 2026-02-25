@@ -22,6 +22,7 @@ import (
 	lssqs "github.com/flowerinthenight/longsub/awssqs"
 	lspubsub "github.com/flowerinthenight/longsub/gcppubsub"
 	yaml "github.com/goccy/go-yaml"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -435,6 +436,31 @@ func process(ctx any, data []byte) error {
 				if remaining <= 0 {
 					delete(app.runTracker, c.ID)
 					log.Printf("run complete: runID=%v all scenarios finished", c.ID)
+					if app.rpub != nil {
+						msgID := uuid.NewString()
+						attr := map[string]string{
+							"event":  "run_complete",
+							"run_id": c.ID,
+						}
+						if c.Metadata != nil {
+							for _, key := range []string{"pr_number", "branch", "commit_sha", "actor", "run_url", "repository"} {
+								if v, ok := c.Metadata[key].(string); ok && v != "" {
+									attr[key] = v
+								}
+							}
+						}
+						r := ReportPubsub{
+							RunID:      c.ID,
+							Status:     "complete",
+							MessageID:  msgID,
+							Attributes: attr,
+						}
+						if err := app.rpub.Publish(msgID, r); err != nil {
+							log.Printf("publish run_complete failed: %v", err)
+						} else {
+							log.Printf("published run_complete event for runID=%v", c.ID)
+						}
+					}
 
 					if repslack != "" {
 						payload := SlackMessage{
