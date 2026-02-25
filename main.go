@@ -285,6 +285,12 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 			continue
 		}
 	}
+
+	if len(filtered) > 0 {
+		app.runTracker[id] = len(filtered)
+		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
+	}
+
 	return true
 }
 
@@ -339,6 +345,12 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 			continue
 		}
 	}
+
+	if len(filtered) > 0 {
+		app.runTracker[id] = len(filtered)
+		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
+	}
+
 	return true
 }
 
@@ -347,6 +359,7 @@ type appctx struct {
 	rpub     *lspubsub.PubsubPublisher // topic to publish reports
 	mtx      *sync.Mutex
 	topicArn *string
+	runTracker map[string]int // runTracker tracks how many scenarios remain per runID.
 }
 
 // Our message processing callback.
@@ -413,6 +426,35 @@ func process(ctx any, data []byte) error {
 			Metadata:      c.Metadata,
 			RunID:         c.ID,
 		})
+		if c.ID != "" {
+			if _, ok := app.runTracker[c.ID]; ok {
+				app.runTracker[c.ID]--
+				remaining := app.runTracker[c.ID]
+				log.Printf("run tracker: runID=%v remaining=%d", c.ID, remaining)
+
+				if remaining <= 0 {
+					delete(app.runTracker, c.ID)
+					log.Printf("run complete: runID=%v all scenarios finished", c.ID)
+
+					if repslack != "" {
+						payload := SlackMessage{
+							Attachments: []SlackAttachment{
+								{
+									Color:     "good",
+									Title:     fmt.Sprintf("run complete: %v", c.ID),
+									Text:      "All scenarios for this run have finished.",
+									Footer:    "oops",
+									Timestamp: time.Now().Unix(),
+								},
+							},
+						}
+						if err := payload.Notify(repslack); err != nil {
+							log.Printf("Notify (slack) run complete failed: %v", err)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return nil
@@ -438,7 +480,8 @@ func run(ctx context.Context, done chan error) {
 	}
 
 	app := &appctx{
-		mtx: &sync.Mutex{},
+		mtx:        &sync.Mutex{},
+		runTracker: make(map[string]int),
 	}
 	ctx0, cancelCtx0 := context.WithCancel(ctx)
 	defer cancelCtx0()
