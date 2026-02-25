@@ -22,6 +22,7 @@ import (
 	lssqs "github.com/flowerinthenight/longsub/awssqs"
 	lspubsub "github.com/flowerinthenight/longsub/gcppubsub"
 	yaml "github.com/goccy/go-yaml"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -285,6 +286,12 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 			continue
 		}
 	}
+
+	if len(filtered) > 0 {
+		app.runTracker[id] = len(filtered)
+		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
+	}
+
 	return true
 }
 
@@ -339,6 +346,12 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 			continue
 		}
 	}
+
+	if len(filtered) > 0 {
+		app.runTracker[id] = len(filtered)
+		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
+	}
+
 	return true
 }
 
@@ -347,6 +360,7 @@ type appctx struct {
 	rpub     *lspubsub.PubsubPublisher // topic to publish reports
 	mtx      *sync.Mutex
 	topicArn *string
+	runTracker map[string]int // runTracker tracks how many scenarios remain per runID.
 }
 
 // Our message processing callback.
@@ -413,6 +427,60 @@ func process(ctx any, data []byte) error {
 			Metadata:      c.Metadata,
 			RunID:         c.ID,
 		})
+		if c.ID != "" {
+			if _, ok := app.runTracker[c.ID]; ok {
+				app.runTracker[c.ID]--
+				remaining := app.runTracker[c.ID]
+				log.Printf("run tracker: runID=%v remaining=%d", c.ID, remaining)
+
+				if remaining <= 0 {
+					delete(app.runTracker, c.ID)
+					log.Printf("run complete: runID=%v all scenarios finished", c.ID)
+					if app.rpub != nil {
+						msgID := uuid.NewString()
+						attr := map[string]string{
+							"event":  "run_complete",
+							"run_id": c.ID,
+						}
+						if c.Metadata != nil {
+							for _, key := range []string{"pr_number", "branch", "commit_sha", "actor", "run_url", "repository"} {
+								if v, ok := c.Metadata[key].(string); ok && v != "" {
+									attr[key] = v
+								}
+							}
+						}
+						r := ReportPubsub{
+							RunID:      c.ID,
+							Status:     "complete",
+							MessageID:  msgID,
+							Attributes: attr,
+						}
+						if err := app.rpub.Publish(msgID, r); err != nil {
+							log.Printf("publish run_complete failed: %v", err)
+						} else {
+							log.Printf("published run_complete event for runID=%v", c.ID)
+						}
+					}
+
+					if repslack != "" {
+						payload := SlackMessage{
+							Attachments: []SlackAttachment{
+								{
+									Color:     "good",
+									Title:     fmt.Sprintf("run complete: %v", c.ID),
+									Text:      "Test scenarios completed.",
+									Footer:    "oops",
+									Timestamp: time.Now().Unix(),
+								},
+							},
+						}
+						if err := payload.Notify(repslack); err != nil {
+							log.Printf("Notify (slack) run complete failed: %v", err)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return nil
@@ -438,7 +506,8 @@ func run(ctx context.Context, done chan error) {
 	}
 
 	app := &appctx{
-		mtx: &sync.Mutex{},
+		mtx:        &sync.Mutex{},
+		runTracker: make(map[string]int),
 	}
 	ctx0, cancelCtx0 := context.WithCancel(ctx)
 	defer cancelCtx0()
