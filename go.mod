@@ -8,6 +8,7 @@ require (
 	github.com/flowerinthenight/longsub v1.6.0
 	github.com/gavv/httpexpect/v2 v2.17.0
 	github.com/goccy/go-yaml v1.19.0
+	github.com/gomodule/redigo v2.0.0+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.10.2

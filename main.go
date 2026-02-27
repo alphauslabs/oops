@@ -272,6 +272,12 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
+	if len(filtered) > 0 {
+		app.setRunTotal(id, len(filtered))
+		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
+	}
+
+	publishFailed := 0
 	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
@@ -283,16 +289,22 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 		err := app.pub.Publish(uniuri.NewLen(10), nc)
 		if err != nil {
 			log.Printf("publish failed: %v ", err)
+			publishFailed++
 			continue
 		}
 	}
 
-	if len(filtered) > 0 {
-		app.runTracker[id] = len(filtered)
-		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
+	if publishFailed > 0 {
+		for i := 0; i < publishFailed; i++ {
+			if remaining, ok := app.decrRun(id); ok {
+				if remaining <= 0 {
+					app.deleteRun(id)
+				}
+			}
+		}
 	}
 
-	return true
+	return len(filtered) > 0
 }
 
 func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) bool {
@@ -324,6 +336,12 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
+	if len(filtered) > 0 {
+		app.setRunTotal(id, len(filtered))
+		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
+	}
+
+	publishFailed := 0
 	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
@@ -343,16 +361,22 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 		_, err := svc.Publish(m)
 		if err != nil {
 			log.Printf("Publish failed: %v", err)
+			publishFailed++
 			continue
 		}
 	}
 
-	if len(filtered) > 0 {
-		app.runTracker[id] = len(filtered)
-		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
+	if publishFailed > 0 {
+		for i := 0; i < publishFailed; i++ {
+			if remaining, ok := app.decrRun(id); ok {
+				if remaining <= 0 {
+					app.deleteRun(id)
+				}
+			}
+		}
 	}
 
-	return true
+	return len(filtered) > 0
 }
 
 type appctx struct {
@@ -360,7 +384,48 @@ type appctx struct {
 	rpub     *lspubsub.PubsubPublisher // topic to publish reports
 	mtx      *sync.Mutex
 	topicArn *string
-	runTracker map[string]int // runTracker tracks how many scenarios remain per runID.
+	runTracker map[string]int   // runTracker tracks how many scenarios remain per runID (in-memory fallback when redis is not avail).
+	rtracker   *redisTracker    // rtracker is the Redis-backed run tracker (nil when Redis is unavailable).
+}
+
+func (a *appctx) setRunTotal(runID string, total int) {
+	if a.rtracker != nil {
+		if err := a.rtracker.Set(runID, total); err != nil {
+			log.Printf("redis set run total failed: %v, falling back to in-memory", err)
+			a.runTracker[runID] = total
+		}
+		return
+	}
+	a.runTracker[runID] = total
+}
+
+func (a *appctx) decrRun(runID string) (int, bool) {
+	if a.rtracker != nil {
+		val, err := a.rtracker.Decr(runID)
+		if err != nil {
+			log.Printf("redis decr failed: %v", err)
+			return -1, false
+		}
+		if val == -1 {
+			return -1, false
+		}
+		return val, true
+	}
+	if _, ok := a.runTracker[runID]; !ok {
+		return -1, false
+	}
+	a.runTracker[runID]--
+	return a.runTracker[runID], true
+}
+
+func (a *appctx) deleteRun(runID string) {
+	if a.rtracker != nil {
+		if err := a.rtracker.Delete(runID); err != nil {
+			log.Printf("redis delete run failed: %v", err)
+		}
+		return
+	}
+	delete(a.runTracker, runID)
 }
 
 // Our message processing callback.
@@ -428,13 +493,12 @@ func process(ctx any, data []byte) error {
 			RunID:         c.ID,
 		})
 		if c.ID != "" {
-			if _, ok := app.runTracker[c.ID]; ok {
-				app.runTracker[c.ID]--
-				remaining := app.runTracker[c.ID]
+			remaining, ok := app.decrRun(c.ID)
+			if ok {
 				log.Printf("run tracker: runID=%v remaining=%d", c.ID, remaining)
 
 				if remaining <= 0 {
-					delete(app.runTracker, c.ID)
+					app.deleteRun(c.ID)
 					log.Printf("run complete: runID=%v all scenarios finished", c.ID)
 					if app.rpub != nil {
 						msgID := uuid.NewString()
@@ -508,6 +572,7 @@ func run(ctx context.Context, done chan error) {
 	app := &appctx{
 		mtx:        &sync.Mutex{},
 		runTracker: make(map[string]int),
+		rtracker:   newRedisTracker(),
 	}
 	ctx0, cancelCtx0 := context.WithCancel(ctx)
 	defer cancelCtx0()
