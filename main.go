@@ -271,6 +271,9 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
+
+	metadata["total_scenarios"] = fmt.Sprintf("%d", len(filtered))
+
 	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
@@ -317,6 +320,9 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
+
+	metadata["total_scenarios"] = fmt.Sprintf("%d", len(filtered))
+
 	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
