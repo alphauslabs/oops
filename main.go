@@ -264,11 +264,11 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 		return false
 	}
 
-		log.Printf("affected services from metadata: %v", affectedServices)
-		final := combineFilesAndDir()
-		before := len(final)
-		final = filterScenariosByAffectedServices(final, affectedServices)
-		log.Printf("service filter: %d/%d scenarios kept", len(final), before)
+	log.Printf("affected services from metadata: %v", affectedServices)
+	final := combineFilesAndDir()
+	before := len(final)
+	final = filterScenariosByAffectedServices(final, affectedServices)
+	log.Printf("service filter: %d/%d scenarios kept", len(final), before)
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
@@ -318,9 +318,9 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 	log.Printf("affected services from metadata: %v", affectedServices)
 	id := runID
 	final := combineFilesAndDir()
-		before := len(final)
-		final = filterScenariosByAffectedServices(final, affectedServices)
-		log.Printf("service filter: %d/%d scenarios kept", len(final), before)
+	before := len(final)
+	final = filterScenariosByAffectedServices(final, affectedServices)
+	log.Printf("service filter: %d/%d scenarios kept", len(final), before)
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
@@ -356,10 +356,10 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 }
 
 type appctx struct {
-	pub      *lspubsub.PubsubPublisher // starter publisher topic
-	rpub     *lspubsub.PubsubPublisher // topic to publish reports
-	mtx      *sync.Mutex
-	topicArn *string
+	pub        *lspubsub.PubsubPublisher // starter publisher topic
+	rpub       *lspubsub.PubsubPublisher // topic to publish reports
+	mtx        *sync.Mutex
+	topicArn   *string
 	runTracker map[string]int // runTracker tracks how many scenarios remain per runID.
 }
 
@@ -614,6 +614,7 @@ func runCmd() *cobra.Command {
 }
 
 func init() {
+	rootcmd.Flags().SortFlags = false
 	rootcmd.PersistentFlags().SortFlags = false
 	rootcmd.PersistentFlags().StringVar(&project, "project-id", os.Getenv("GCP_PROJECT_ID"), "GCP project id")
 	rootcmd.PersistentFlags().StringVar(&region, "region", os.Getenv("AWS_REGION"), "AWS region")
