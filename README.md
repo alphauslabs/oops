@@ -59,7 +59,7 @@ env:
 #
 # If supported, the filename of the script will be indicated below.
 #
-# At the moment, shell interpreters (that works with `bin -c scriptfile` command is
+# At the moment, shell interpreters that works with `bin -c scriptfile` command is
 # supported. Also, Python is supported as well by using the shebang:
 #   #!/path/to/python/binary
 
@@ -156,3 +156,4 @@ Example [scenario files](https://github.com/alphauslabs/oops/tree/master/example
 - [ ] Store reports to some storage, i.e. S3, GCS, etc.
 - [ ] Support for AKS + Service Bus
 - [x] Add GCP PubSub for reporting
+
