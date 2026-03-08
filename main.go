@@ -49,6 +49,9 @@ var (
 	repslack  string
 	reppubsub string
 
+	scenariopubsub string
+	githubtoken    string
+
 	verbose bool
 )
 
@@ -423,6 +426,30 @@ func process(ctx any, data []byte) error {
 	return nil
 }
 
+func handleScenarioCompletion(ctx any, data []byte) error {
+	var msg ScenarioProgressMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		log.Printf("handleScenarioCompletion: unmarshal failed: %v", err)
+		return err
+	}
+
+	log.Printf("scenario progress: run_id=%s code=%s progress=%s", msg.RunID, msg.Code, msg.TotalScenarios)
+
+	if msg.Code != "completed" {
+		return nil
+	}
+
+	log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
+		msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
+
+	if err := updateGitHubCommitStatus(githubtoken, &msg); err != nil {
+		log.Printf("updateGitHubCommitStatus failed: %v", err)
+		return nil
+	}
+
+	return nil
+}
+
 func run(ctx context.Context, done chan error) {
 	var err error
 	if snssqs != "" && pubsub != "" {
@@ -513,6 +540,31 @@ func run(ctx context.Context, done chan error) {
 		}()
 	}
 
+	if scenariopubsub != "" && githubtoken != "" && pubsub != "" {
+		log.Printf("starting scenario progress listener on %v", scenariopubsub)
+
+		_, st, err := lspubsub.GetPublisher(project, scenariopubsub)
+		if err != nil {
+			log.Fatalf("publisher get/create for %v failed: %v", scenariopubsub, err)
+		}
+
+		_, err = lspubsub.GetSubscription(project, scenariopubsub, st, time.Second*60)
+		if err != nil {
+			log.Fatalf("subscription get/create for %v failed: %v", scenariopubsub, err)
+		}
+
+		done1 := make(chan error, 1)
+		go func() {
+			ls := lspubsub.NewLengthySubscriber(nil, project, scenariopubsub, handleScenarioCompletion)
+			err := ls.Start(ctx0, done1)
+			if err != nil {
+				log.Fatalf("listener for scenario progress failed: %v", err)
+			}
+		}()
+	} else if scenariopubsub != "" && githubtoken == "" {
+		log.Printf("WARNING: --scenario-pubsub set but MOBINGI_DEPLOYER_KEY is empty; GitHub status updates disabled")
+	}
+
 	<-ctx.Done()
 	done <- <-done0
 }
@@ -546,6 +598,8 @@ func runCmd() *cobra.Command {
 	cmd.Flags().SortFlags = false
 	cmd.Flags().StringVar(&snssqs, "snssqs", snssqs, "name of the SNS topic and SQS queue")
 	cmd.Flags().StringVar(&pubsub, "pubsub", pubsub, "name of the GCP pubsub and subscription")
+	cmd.Flags().StringVar(&scenariopubsub, "scenario-pubsub", os.Getenv("SCENARIO_PUBSUB"), "pubsub subscription for scenario progress (e.g. oopsdev-scenarios)")
+	cmd.Flags().StringVar(&githubtoken, "github-token", os.Getenv("MOBINGI_DEPLOYER_KEY"), "Mobingi deployer key for commit status updates")
 	return cmd
 }
 
