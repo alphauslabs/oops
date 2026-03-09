@@ -56,8 +56,9 @@ var (
 )
 
 type cmd struct {
-	// Valid values: start | process
+	// Valid values: start | start_all | process
 	// start = initiate distribution of files in --dir to SNS
+	// start_all = initiate distribution of all files in --dir (tag-filtered only)
 	// process = normal processing (one yaml at a time)
 	Code string `json:"code"`
 
@@ -258,19 +259,21 @@ func filterScenariosByAffectedServices(files []string, affectedServices []string
 	return out
 }
 
-func distributePubsub(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) bool {
+func distributePubsub(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}, forceAll bool) bool {
 	id := runID
-	affectedServices := extractAffectedServices(metadata)
-	if len(affectedServices) == 0 {
-		log.Printf("no affected services in metadata, skipping distribution")
-		return false
-	}
+	final := combineFilesAndDir()
+	if !forceAll {
+		affectedServices := extractAffectedServices(metadata)
+		if len(affectedServices) == 0 {
+			log.Printf("no affected services in metadata, skipping distribution")
+			return false
+		}
 
 		log.Printf("affected services from metadata: %v", affectedServices)
-		final := combineFilesAndDir()
 		before := len(final)
 		final = filterScenariosByAffectedServices(final, affectedServices)
 		log.Printf("service filter: %d/%d scenarios kept", len(final), before)
+	}
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
@@ -294,7 +297,7 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 	return true
 }
 
-func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}) bool {
+func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}, forceAll bool) bool {
 	sess, _ := session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(key, secret, ""),
@@ -308,18 +311,20 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 		svc = sns.New(sess)
 	}
 
-	affectedServices := extractAffectedServices(metadata)
-	if len(affectedServices) == 0 {
-		log.Printf("no affected services in metadata, skipping distribution")
-		return false
-	}
-
-	log.Printf("affected services from metadata: %v", affectedServices)
 	id := runID
 	final := combineFilesAndDir()
+	if !forceAll {
+		affectedServices := extractAffectedServices(metadata)
+		if len(affectedServices) == 0 {
+			log.Printf("no affected services in metadata, skipping distribution")
+			return false
+		}
+
+		log.Printf("affected services from metadata: %v", affectedServices)
 		before := len(final)
 		final = filterScenariosByAffectedServices(final, affectedServices)
 		log.Printf("service filter: %d/%d scenarios kept", len(final), before)
+	}
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
@@ -377,10 +382,10 @@ func process(ctx any, data []byte) error {
 		var dist string
 		switch {
 		case pubsub != "":
-			distributed = distributePubsub(app, c.ID, c.Tags, c.Metadata)
+			distributed = distributePubsub(app, c.ID, c.Tags, c.Metadata, false)
 			dist = fmt.Sprintf("pubsub=%v", pubsub)
 		case snssqs != "":
-			distributed = distributeSQS(app, c.ID, c.Tags, c.Metadata)
+			distributed = distributeSQS(app, c.ID, c.Tags, c.Metadata, false)
 			dist = fmt.Sprintf("sns/sqs=%v", snssqs)
 		}
 
@@ -398,6 +403,45 @@ func process(ctx any, data []byte) error {
 					{
 						Color:     "good",
 						Title:     "start tests",
+						Text:      fmt.Sprintf("from %v through %v", host, dist),
+						Footer:    "oops",
+						Timestamp: time.Now().Unix(),
+					},
+				},
+			}
+
+			err = payload.Notify(repslack)
+			if err != nil {
+				log.Printf("Notify (slack) failed: %v", err)
+			}
+		}
+	case "start_all":
+		log.Printf("received start_all command with tags: %v", c.Tags)
+		var distributed bool
+		var dist string
+		switch {
+		case pubsub != "":
+			distributed = distributePubsub(app, c.ID, c.Tags, c.Metadata, true)
+			dist = fmt.Sprintf("pubsub=%v", pubsub)
+		case snssqs != "":
+			distributed = distributeSQS(app, c.ID, c.Tags, c.Metadata, true)
+			dist = fmt.Sprintf("sns/sqs=%v", snssqs)
+		}
+
+		if !distributed {
+			log.Printf("no scenarios distributed, skipping slack notification")
+			break
+		}
+
+		host, _ := os.Hostname()
+
+		// Send to slack, if any.
+		if repslack != "" {
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color:     "good",
+						Title:     "start all tests",
 						Text:      fmt.Sprintf("from %v through %v", host, dist),
 						Footer:    "oops",
 						Timestamp: time.Now().Unix(),
@@ -604,6 +648,7 @@ func runCmd() *cobra.Command {
 }
 
 func init() {
+	rootcmd.Flags().SortFlags = false
 	rootcmd.PersistentFlags().SortFlags = false
 	rootcmd.PersistentFlags().StringVar(&project, "project-id", os.Getenv("GCP_PROJECT_ID"), "GCP project id")
 	rootcmd.PersistentFlags().StringVar(&region, "region", os.Getenv("AWS_REGION"), "AWS region")
