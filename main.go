@@ -292,6 +292,7 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 
 	if len(filtered) > 0 {
 		app.runTracker[id] = len(filtered)
+		app.runSummary[id] = &runSummary{}
 		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
 	}
 
@@ -354,10 +355,17 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 
 	if len(filtered) > 0 {
 		app.runTracker[id] = len(filtered)
+		app.runSummary[id] = &runSummary{}
 		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
 	}
 
 	return true
+}
+
+type runSummary struct {
+	Success         int
+	Failed          int
+	FailedScenarios []string
 }
 
 type appctx struct {
@@ -365,7 +373,8 @@ type appctx struct {
 	rpub       *lspubsub.PubsubPublisher // topic to publish reports
 	mtx        *sync.Mutex
 	topicArn   *string
-	runTracker map[string]int // runTracker tracks how many scenarios remain per runID.
+	runTracker map[string]int         // runTracker tracks how many scenarios remain per runID.
+	runSummary map[string]*runSummary // runSummary tracks pass/fail counts per runID.
 }
 
 // Our message processing callback.
@@ -470,6 +479,21 @@ func process(ctx any, data []byte) error {
 			Verbose:       verbose,
 			Metadata:      c.Metadata,
 			RunID:         c.ID,
+			OnScenarioDone: func(scenario, status string) {
+				if c.ID == "" {
+					return
+				}
+				rs, ok := app.runSummary[c.ID]
+				if !ok {
+					return
+				}
+				if status == "success" {
+					rs.Success++
+				} else {
+					rs.Failed++
+					rs.FailedScenarios = append(rs.FailedScenarios, filepath.Base(scenario))
+				}
+			},
 		})
 		if c.ID != "" {
 			if _, ok := app.runTracker[c.ID]; ok {
@@ -479,6 +503,31 @@ func process(ctx any, data []byte) error {
 
 				if remaining <= 0 {
 					delete(app.runTracker, c.ID)
+
+					// Build run summary from tracked results.
+					var summaryText strings.Builder
+					summaryTitle := "Test Run Complete"
+					summaryColor := "good"
+					if rs, ok := app.runSummary[c.ID]; ok {
+						total := rs.Success + rs.Failed
+						if rs.Failed > 0 {
+							summaryTitle = "Test Run Complete (With Failures)"
+							summaryColor = "danger"
+						} else {
+							summaryTitle = "Test Run Complete"
+						}
+						fmt.Fprintf(&summaryText, "*Run Summary*\nTotal: %d\nPassed: %d\nFailed: %d", total, rs.Success, rs.Failed)
+						if len(rs.FailedScenarios) > 0 {
+							summaryText.WriteString("\n\n*Failed scenarios:*")
+							for _, name := range rs.FailedScenarios {
+								fmt.Fprintf(&summaryText, "\n• %v", name)
+							}
+						}
+					} else {
+						summaryText.WriteString("Run completed.")
+					}
+					delete(app.runSummary, c.ID)
+
 					log.Printf("run complete: runID=%v all scenarios finished", c.ID)
 					if app.rpub != nil {
 						msgID := uuid.NewString()
@@ -510,11 +559,12 @@ func process(ctx any, data []byte) error {
 						payload := SlackMessage{
 							Attachments: []SlackAttachment{
 								{
-									Color:     "good",
-									Title:     fmt.Sprintf("run complete: %v", c.ID),
-									Text:      "Test scenarios completed.",
-									Footer:    "oops",
+									Color:     summaryColor,
+									Title:     summaryTitle,
+									Text:      summaryText.String(),
+									Footer:    fmt.Sprintf("oops • run: %v", c.ID),
 									Timestamp: time.Now().Unix(),
+									MrkdwnIn:  []string{"text"},
 								},
 							},
 						}
@@ -552,6 +602,7 @@ func run(ctx context.Context, done chan error) {
 	app := &appctx{
 		mtx:        &sync.Mutex{},
 		runTracker: make(map[string]int),
+		runSummary: make(map[string]*runSummary),
 	}
 	ctx0, cancelCtx0 := context.WithCancel(ctx)
 	defer cancelCtx0()
