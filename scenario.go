@@ -161,14 +161,15 @@ func (s Scenario) Errorf(message string, args ...any) {
 }
 
 type doScenarioInput struct {
-	app           *appctx
-	ScenarioFiles []string
-	WorkDir       string
-	ReportSlack   string
-	ReportPubsub  string
-	Verbose       bool
-	Metadata      map[string]interface{}
-	RunID         string
+	app            *appctx
+	ScenarioFiles  []string
+	WorkDir        string
+	ReportSlack    string
+	ReportPubsub   string
+	Verbose        bool
+	Metadata       map[string]interface{}
+	RunID          string
+	OnScenarioDone func(scenario, status string)
 }
 
 func isAllowed(s *Scenario) bool {
@@ -422,6 +423,14 @@ func doScenario(in *doScenarioInput) error {
 					log.Printf("Publish failed: %v", err)
 				}
 			}
+		}
+
+		if in.OnScenarioDone != nil {
+			status := "success"
+			if len(s.errs) > 0 {
+				status = "error"
+			}
+			in.OnScenarioDone(f, status)
 		}
 	}
 
