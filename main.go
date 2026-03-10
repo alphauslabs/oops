@@ -488,7 +488,47 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 
 	if err := updateGitHubCommitStatus(githubtoken, &msg); err != nil {
 		log.Printf("updateGitHubCommitStatus failed: %v", err)
-		return nil
+	}
+
+	if repslack != "" {
+		color := "good"
+		title := "Tests Done."
+		var text string
+
+		parts := strings.SplitN(msg.TotalScenarios, "/", 2)
+		total := parts[len(parts)-1]
+		successCount := int64(0)
+		if len(parts) == 2 {
+			var t int64
+			fmt.Sscanf(parts[1], "%d", &t)
+			successCount = t - msg.FailedCount
+		}
+
+		if msg.OverallStatus == "failure" || msg.FailedCount > 0 {
+			color = "danger"
+			title = "Tests Done."
+			text = fmt.Sprintf("Test completed with %d/%s success scenarios. Please check the errors <%s|here>.",
+				successCount, total, msg.RunURL)
+		} else {
+			text = fmt.Sprintf("Test completed with %s/%s success scenarios.",
+				total, total)
+		}
+
+		payload := SlackMessage{
+			Attachments: []SlackAttachment{
+				{
+					Color:     color,
+					Title:     title,
+					Text:      text,
+					Footer:    "oops",
+					Timestamp: time.Now().Unix(),
+				},
+			},
+		}
+
+		if err := payload.Notify(repslack); err != nil {
+			log.Printf("Notify (slack) failed: %v", err)
+		}
 	}
 
 	return nil
