@@ -80,17 +80,18 @@ type cmd struct {
 }
 
 type ScenarioProgressMessage struct {
-	Status         string `json:"status"`
-	Scenario       string `json:"scenario"`
-	RunID          string `json:"run_id"`
-	Data           string `json:"data"`
-	TotalScenarios string `json:"total_scenarios"`
-	Code           string `json:"code"`
-	OverallStatus  string `json:"overall_status,omitempty"`
-	FailedCount    int64  `json:"failed_count,omitempty"`
-	CommitSHA      string `json:"commit_sha,omitempty"`
-	Repository     string `json:"repository,omitempty"`
-	RunURL         string `json:"run_url,omitempty"`
+	Status          string   `json:"status"`
+	Scenario        string   `json:"scenario"`
+	RunID           string   `json:"run_id"`
+	Data            string   `json:"data"`
+	TotalScenarios  string   `json:"total_scenarios"`
+	Code            string   `json:"code"`
+	OverallStatus   string   `json:"overall_status,omitempty"`
+	FailedCount     int64    `json:"failed_count,omitempty"`
+	FailedScenarios []string `json:"failed_scenarios,omitempty"`
+	CommitSHA       string   `json:"commit_sha,omitempty"`
+	Repository      string   `json:"repository,omitempty"`
+	RunURL          string   `json:"run_url,omitempty"`
 }
 
 func runE(cmd *cobra.Command, args []string) error {
@@ -522,12 +523,19 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 
 		if msg.OverallStatus == "failure" || msg.FailedCount > 0 {
 			color = "danger"
-			title = "Tests Done."
-			text = fmt.Sprintf("Test completed with %d/%s success scenarios. Please check the errors <%s|here>.",
-				successCount, total, msg.RunURL)
+			title = "Test Run Complete (With Failures)"
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "*Run Summary*\nTotal: %s\nPassed: %d\nFailed: %d", total, successCount, msg.FailedCount)
+			if len(msg.FailedScenarios) > 0 {
+				sb.WriteString("\n\n*Failed scenarios:*")
+				for _, name := range msg.FailedScenarios {
+					fmt.Fprintf(&sb, "\n• %v", name)
+				}
+			}
+			text = sb.String()
 		} else {
-			text = fmt.Sprintf("Test completed with %s/%s success scenarios.",
-				total, total)
+			title = "Test Run Complete"
+			text = fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
 		}
 
 		payload := SlackMessage{
@@ -536,8 +544,9 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 					Color:     color,
 					Title:     title,
 					Text:      text,
-					Footer:    "oops",
+					Footer:    fmt.Sprintf("oops • run: %v", msg.RunID),
 					Timestamp: time.Now().Unix(),
+					MrkdwnIn:  []string{"text"},
 				},
 			},
 		}
