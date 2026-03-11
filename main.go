@@ -52,6 +52,7 @@ var (
 	scenariopubsub string
 	githubtoken    string
 	secretproject  string
+	secretname     string
 
 	verbose bool
 )
@@ -711,12 +712,12 @@ func run(ctx context.Context, done chan error) {
 		}()
 	}
 	if secretproject != "" {
-		val, err := getSecret(ctx, secretproject, "mobingi-deployer-key")
+		val, err := getSecret(ctx, secretproject, secretname)
 		if err != nil {
-			log.Printf("WARNING: could not fetch mobingi-deployer-key from Secret Manager: %v", err)
+			log.Printf("WARNING: could not fetch %v from Secret Manager: %v", secretname, err)
 		} else {
 			githubtoken = strings.TrimSpace(val)
-			log.Printf("mobingi-deployer-key loaded from Secret Manager (project=%s)", secretproject)
+			log.Printf("%v loaded from Secret Manager (project=%s)", secretname, secretproject)
 		}
 	}
 
@@ -786,7 +787,8 @@ func init() {
 	rootcmd.Flags().SortFlags = false
 	rootcmd.PersistentFlags().SortFlags = false
 	rootcmd.PersistentFlags().StringVar(&project, "project-id", os.Getenv("GCP_PROJECT_ID"), "GCP project id")
-	rootcmd.PersistentFlags().StringVar(&secretproject, "secret-project-id", "", "GCP project id where secrets are stored ")
+	rootcmd.PersistentFlags().StringVar(&secretproject, "secret-project-id", "", "GCP project id where secrets are stored")
+	rootcmd.PersistentFlags().StringVar(&secretname, "secret-name", "", "secret name to fetch from Secret Manager")
 	rootcmd.PersistentFlags().StringVar(&region, "region", os.Getenv("AWS_REGION"), "AWS region")
 	rootcmd.PersistentFlags().StringVar(&key, "aws-key", os.Getenv("AWS_ACCESS_KEY_ID"), "AWS access key")
 	rootcmd.PersistentFlags().StringVar(&secret, "aws-secret", os.Getenv("AWS_SECRET_ACCESS_KEY"), "AWS secret key")
