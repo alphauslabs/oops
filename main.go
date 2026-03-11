@@ -78,6 +78,20 @@ type cmd struct {
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
+type ScenarioProgressMessage struct {
+	Status         string `json:"status"`
+	Scenario       string `json:"scenario"`
+	RunID          string `json:"run_id"`
+	Data           string `json:"data"`
+	TotalScenarios string `json:"total_scenarios"`
+	Code           string `json:"code"`
+	OverallStatus  string `json:"overall_status,omitempty"`
+	FailedCount    int64  `json:"failed_count,omitempty"`
+	CommitSHA      string `json:"commit_sha,omitempty"`
+	Repository     string `json:"repository,omitempty"`
+	RunURL         string `json:"run_url,omitempty"`
+}
+
 func runE(cmd *cobra.Command, args []string) error {
 	return doScenario(&doScenarioInput{
 		ScenarioFiles: combineFilesAndDir(),
@@ -557,8 +571,8 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 	log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
 		msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
 
-	if err := updateGitHubCommitStatus(githubtoken, &msg); err != nil {
-		log.Printf("updateGitHubCommitStatus failed: %v", err)
+	if err := sendRepositoryDispatch(githubtoken, &msg); err != nil {
+		log.Printf("sendRepositoryDispatch failed: %v", err)
 	}
 
 	if repslack != "" {
