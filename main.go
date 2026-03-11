@@ -51,6 +51,8 @@ var (
 
 	scenariopubsub string
 	githubtoken    string
+	secretproject  string
+	secretname     string
 
 	verbose bool
 )
@@ -75,6 +77,20 @@ type cmd struct {
 
 	// Metadata for cancellation requests
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type ScenarioProgressMessage struct {
+	Status         string `json:"status"`
+	Scenario       string `json:"scenario"`
+	RunID          string `json:"run_id"`
+	Data           string `json:"data"`
+	TotalScenarios string `json:"total_scenarios"`
+	Code           string `json:"code"`
+	OverallStatus  string `json:"overall_status,omitempty"`
+	FailedCount    int64  `json:"failed_count,omitempty"`
+	CommitSHA      string `json:"commit_sha,omitempty"`
+	Repository     string `json:"repository,omitempty"`
+	RunURL         string `json:"run_url,omitempty"`
 }
 
 func runE(cmd *cobra.Command, args []string) error {
@@ -486,8 +502,8 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 	log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
 		msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
 
-	if err := updateGitHubCommitStatus(githubtoken, &msg); err != nil {
-		log.Printf("updateGitHubCommitStatus failed: %v", err)
+	if err := sendRepositoryDispatch(githubtoken, &msg); err != nil {
+		log.Printf("sendRepositoryDispatch failed: %v", err)
 	}
 
 	if repslack != "" {
@@ -623,6 +639,15 @@ func run(ctx context.Context, done chan error) {
 			}
 		}()
 	}
+	if secretproject != "" {
+		val, err := getSecret(ctx, secretproject, secretname)
+		if err != nil {
+			log.Printf("WARNING: could not fetch %v from Secret Manager: %v", secretname, err)
+		} else {
+			githubtoken = strings.TrimSpace(val)
+			log.Printf("%v loaded from Secret Manager (project=%s)", secretname, secretproject)
+		}
+	}
 
 	if scenariopubsub != "" && githubtoken != "" && pubsub != "" {
 		log.Printf("starting scenario progress listener on %v", scenariopubsub)
@@ -646,7 +671,7 @@ func run(ctx context.Context, done chan error) {
 			}
 		}()
 	} else if scenariopubsub != "" && githubtoken == "" {
-		log.Printf("WARNING: --scenario-pubsub set but MOBINGI_DEPLOYER_KEY is empty; GitHub status updates disabled")
+		log.Printf("WARNING: --scenario-pubsub set but github token is empty; set --secret-project-id or --github-token to enable GitHub status updates")
 	}
 
 	<-ctx.Done()
@@ -683,7 +708,6 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringVar(&snssqs, "snssqs", snssqs, "name of the SNS topic and SQS queue")
 	cmd.Flags().StringVar(&pubsub, "pubsub", pubsub, "name of the GCP pubsub and subscription")
 	cmd.Flags().StringVar(&scenariopubsub, "scenario-pubsub", os.Getenv("SCENARIO_PUBSUB"), "pubsub subscription for scenario progress (e.g. oopsdev-scenarios)")
-	cmd.Flags().StringVar(&githubtoken, "github-token", os.Getenv("MOBINGI_DEPLOYER_KEY"), "Mobingi deployer key for commit status updates")
 	return cmd
 }
 
@@ -691,6 +715,8 @@ func init() {
 	rootcmd.Flags().SortFlags = false
 	rootcmd.PersistentFlags().SortFlags = false
 	rootcmd.PersistentFlags().StringVar(&project, "project-id", os.Getenv("GCP_PROJECT_ID"), "GCP project id")
+	rootcmd.PersistentFlags().StringVar(&secretproject, "secret-project-id", "", "GCP project id where secrets are stored")
+	rootcmd.PersistentFlags().StringVar(&secretname, "secret-name", "", "secret name to fetch from Secret Manager")
 	rootcmd.PersistentFlags().StringVar(&region, "region", os.Getenv("AWS_REGION"), "AWS region")
 	rootcmd.PersistentFlags().StringVar(&key, "aws-key", os.Getenv("AWS_ACCESS_KEY_ID"), "AWS access key")
 	rootcmd.PersistentFlags().StringVar(&secret, "aws-secret", os.Getenv("AWS_SECRET_ACCESS_KEY"), "AWS secret key")
@@ -701,6 +727,7 @@ func init() {
 	rootcmd.PersistentFlags().StringVar(&reppubsub, "report-pubsub", reppubsub, "pubsub topic for notification")
 	rootcmd.PersistentFlags().StringSliceVarP(&files, "scenarios", "s", files, "scenario file[s] to run, comma-separated, or multiple -s")
 	rootcmd.PersistentFlags().StringSliceVarP(&tags, "tags", "t", tags, "key=value labels in scenario files that are allowed to run, empty means all")
+	rootcmd.PersistentFlags().StringVar(&githubtoken, "github-token", "", "GitHub token for commit status updates")
 	rootcmd.AddCommand(runCmd())
 }
 

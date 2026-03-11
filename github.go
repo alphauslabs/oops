@@ -9,57 +9,39 @@ import (
 	"net/http"
 )
 
-type ScenarioProgressMessage struct {
-	Status         string `json:"status"`
-	Scenario       string `json:"scenario"`
-	RunID          string `json:"run_id"`
-	Data           string `json:"data"`
-	TotalScenarios string `json:"total_scenarios"`
-	Code           string `json:"code"`
-	OverallStatus  string `json:"overall_status,omitempty"`
-	FailedCount    int64  `json:"failed_count,omitempty"`
-	CommitSHA      string `json:"commit_sha,omitempty"`
-	Repository     string `json:"repository,omitempty"`
-	RunURL         string `json:"run_url,omitempty"`
+type repositoryDispatchPayload struct {
+	EventType     string                 `json:"event_type"`
+	ClientPayload map[string]interface{} `json:"client_payload"`
 }
 
-type githubCommitStatus struct {
-	State       string `json:"state"`
-	TargetURL   string `json:"target_url,omitempty"`
-	Description string `json:"description"`
-	Context     string `json:"context"`
-}
-
-func updateGitHubCommitStatus(token string, msg *ScenarioProgressMessage) error {
+func sendRepositoryDispatch(token string, msg *ScenarioProgressMessage) error {
 	if token == "" {
-		return fmt.Errorf("mobingi deployer key is empty, skipping commit status update")
+		return fmt.Errorf("github token is empty, skipping repository_dispatch")
 	}
 
 	if msg.CommitSHA == "" || msg.Repository == "" {
 		return fmt.Errorf("commit_sha=%q or repository=%q missing, skipping", msg.CommitSHA, msg.Repository)
 	}
 
-	state := "success"
-	description := fmt.Sprintf("All tests passed (%s)", msg.TotalScenarios)
-
-	if msg.OverallStatus == "failure" || msg.FailedCount > 0 {
-		state = "failure"
-		description = fmt.Sprintf("%d/%s scenario(s) failed", msg.FailedCount, msg.TotalScenarios)
-	}
-
-	payload := githubCommitStatus{
-		State:       state,
-		TargetURL:   msg.RunURL,
-		Description: description,
-		Context:     "ci/oopstest",
+	payload := repositoryDispatchPayload{
+		EventType: "oopstest-completed",
+		ClientPayload: map[string]interface{}{
+			"run_id":          msg.RunID,
+			"commit_sha":      msg.CommitSHA,
+			"repository":      msg.Repository,
+			"run_url":         msg.RunURL,
+			"overall_status":  msg.OverallStatus,
+			"failed_count":    msg.FailedCount,
+			"total_scenarios": msg.TotalScenarios,
+		},
 	}
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("json.Marshal commit status: %w", err)
+		return fmt.Errorf("json.Marshal repository_dispatch payload: %w", err)
 	}
 
-	url := fmt.Sprintf("https://api.github.com/repos/%s/statuses/%s", msg.Repository, msg.CommitSHA)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/dispatches", msg.Repository)
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -77,13 +59,13 @@ func updateGitHubCommitStatus(token string, msg *ScenarioProgressMessage) error 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 300 {
+	if resp.StatusCode != http.StatusNoContent {
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("github API returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	log.Printf("GitHub commit status updated: repo=%s sha=%s state=%s description=%s",
-		msg.Repository, msg.CommitSHA, state, description)
+	log.Printf("repository_dispatch sent: repo=%s sha=%s run_id=%s overall_status=%s",
+		msg.Repository, msg.CommitSHA, msg.RunID, msg.OverallStatus)
 
 	return nil
 }
