@@ -22,7 +22,6 @@ import (
 	lssqs "github.com/flowerinthenight/longsub/awssqs"
 	lspubsub "github.com/flowerinthenight/longsub/gcppubsub"
 	yaml "github.com/goccy/go-yaml"
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -49,6 +48,9 @@ var (
 
 	repslack  string
 	reppubsub string
+
+	scenariopubsub string
+	githubtoken    string
 
 	verbose bool
 )
@@ -275,6 +277,9 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
+
+	metadata["total_scenarios"] = fmt.Sprintf("%d", len(filtered))
+
 	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
@@ -289,13 +294,6 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 			continue
 		}
 	}
-
-	if len(filtered) > 0 {
-		app.runTracker[id] = len(filtered)
-		app.runSummary[id] = &runSummary{}
-		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
-	}
-
 	return true
 }
 
@@ -330,6 +328,8 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
+	metadata["total_scenarios"] = fmt.Sprintf("%d", len(filtered))
+
 	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
@@ -352,13 +352,6 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 			continue
 		}
 	}
-
-	if len(filtered) > 0 {
-		app.runTracker[id] = len(filtered)
-		app.runSummary[id] = &runSummary{}
-		log.Printf("run tracker: runID=%v total=%d", id, len(filtered))
-	}
-
 	return true
 }
 
@@ -369,12 +362,10 @@ type runSummary struct {
 }
 
 type appctx struct {
-	pub        *lspubsub.PubsubPublisher // starter publisher topic
-	rpub       *lspubsub.PubsubPublisher // topic to publish reports
-	mtx        *sync.Mutex
-	topicArn   *string
-	runTracker map[string]int         // runTracker tracks how many scenarios remain per runID.
-	runSummary map[string]*runSummary // runSummary tracks pass/fail counts per runID.
+	pub      *lspubsub.PubsubPublisher // starter publisher topic
+	rpub     *lspubsub.PubsubPublisher // topic to publish reports
+	mtx      *sync.Mutex
+	topicArn *string
 }
 
 // Our message processing callback.
@@ -495,85 +486,69 @@ func process(ctx any, data []byte) error {
 				}
 			},
 		})
-		if c.ID != "" {
-			if _, ok := app.runTracker[c.ID]; ok {
-				app.runTracker[c.ID]--
-				remaining := app.runTracker[c.ID]
-				log.Printf("run tracker: runID=%v remaining=%d", c.ID, remaining)
+	}
 
-				if remaining <= 0 {
-					delete(app.runTracker, c.ID)
+	return nil
+}
 
-					// Build run summary from tracked results.
-					var summaryText strings.Builder
-					summaryTitle := "Test Run Complete"
-					summaryColor := "good"
-					if rs, ok := app.runSummary[c.ID]; ok {
-						total := rs.Success + rs.Failed
-						if rs.Failed > 0 {
-							summaryTitle = "Test Run Complete (With Failures)"
-							summaryColor = "danger"
-						} else {
-							summaryTitle = "Test Run Complete"
-						}
-						fmt.Fprintf(&summaryText, "*Run Summary*\nTotal: %d\nPassed: %d\nFailed: %d", total, rs.Success, rs.Failed)
-						if len(rs.FailedScenarios) > 0 {
-							summaryText.WriteString("\n\n*Failed scenarios:*")
-							for _, name := range rs.FailedScenarios {
-								fmt.Fprintf(&summaryText, "\n• %v", name)
-							}
-						}
-					} else {
-						summaryText.WriteString("Run completed.")
-					}
-					delete(app.runSummary, c.ID)
+func handleScenarioCompletion(ctx any, data []byte) error {
+	var msg ScenarioProgressMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		log.Printf("handleScenarioCompletion: unmarshal failed: %v", err)
+		return err
+	}
 
-					log.Printf("run complete: runID=%v all scenarios finished", c.ID)
-					if app.rpub != nil {
-						msgID := uuid.NewString()
-						attr := map[string]string{
-							"event":  "run_complete",
-							"run_id": c.ID,
-						}
-						if c.Metadata != nil {
-							for _, key := range []string{"pr_number", "branch", "commit_sha", "actor", "run_url", "repository"} {
-								if v, ok := c.Metadata[key].(string); ok && v != "" {
-									attr[key] = v
-								}
-							}
-						}
-						r := ReportPubsub{
-							RunID:      c.ID,
-							Status:     "complete",
-							MessageID:  msgID,
-							Attributes: attr,
-						}
-						if err := app.rpub.Publish(msgID, r); err != nil {
-							log.Printf("publish run_complete failed: %v", err)
-						} else {
-							log.Printf("published run_complete event for runID=%v", c.ID)
-						}
-					}
+	log.Printf("scenario progress: run_id=%s code=%s progress=%s", msg.RunID, msg.Code, msg.TotalScenarios)
 
-					if repslack != "" {
-						payload := SlackMessage{
-							Attachments: []SlackAttachment{
-								{
-									Color:     summaryColor,
-									Title:     summaryTitle,
-									Text:      summaryText.String(),
-									Footer:    fmt.Sprintf("oops • run: %v", c.ID),
-									Timestamp: time.Now().Unix(),
-									MrkdwnIn:  []string{"text"},
-								},
-							},
-						}
-						if err := payload.Notify(repslack); err != nil {
-							log.Printf("Notify (slack) run complete failed: %v", err)
-						}
-					}
-				}
-			}
+	if msg.Code != "completed" {
+		return nil
+	}
+
+	log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
+		msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
+
+	if err := updateGitHubCommitStatus(githubtoken, &msg); err != nil {
+		log.Printf("updateGitHubCommitStatus failed: %v", err)
+	}
+
+	if repslack != "" {
+		color := "good"
+		title := "Tests Done."
+		var text string
+
+		parts := strings.SplitN(msg.TotalScenarios, "/", 2)
+		total := parts[len(parts)-1]
+		successCount := int64(0)
+		if len(parts) == 2 {
+			var t int64
+			fmt.Sscanf(parts[1], "%d", &t)
+			successCount = t - msg.FailedCount
+		}
+
+		if msg.OverallStatus == "failure" || msg.FailedCount > 0 {
+			color = "danger"
+			title = "Tests Done."
+			text = fmt.Sprintf("Test completed with %d/%s success scenarios. Please check the errors <%s|here>.",
+				successCount, total, msg.RunURL)
+		} else {
+			text = fmt.Sprintf("Test completed with %s/%s success scenarios.",
+				total, total)
+		}
+
+		payload := SlackMessage{
+			Attachments: []SlackAttachment{
+				{
+					Color:     color,
+					Title:     title,
+					Text:      text,
+					Footer:    "oops",
+					Timestamp: time.Now().Unix(),
+				},
+			},
+		}
+
+		if err := payload.Notify(repslack); err != nil {
+			log.Printf("Notify (slack) failed: %v", err)
 		}
 	}
 
@@ -600,9 +575,7 @@ func run(ctx context.Context, done chan error) {
 	}
 
 	app := &appctx{
-		mtx:        &sync.Mutex{},
-		runTracker: make(map[string]int),
-		runSummary: make(map[string]*runSummary),
+		mtx: &sync.Mutex{},
 	}
 	ctx0, cancelCtx0 := context.WithCancel(ctx)
 	defer cancelCtx0()
@@ -672,6 +645,31 @@ func run(ctx context.Context, done chan error) {
 		}()
 	}
 
+	if scenariopubsub != "" && githubtoken != "" && pubsub != "" {
+		log.Printf("starting scenario progress listener on %v", scenariopubsub)
+
+		_, st, err := lspubsub.GetPublisher(project, scenariopubsub)
+		if err != nil {
+			log.Fatalf("publisher get/create for %v failed: %v", scenariopubsub, err)
+		}
+
+		_, err = lspubsub.GetSubscription(project, scenariopubsub, st, time.Second*60)
+		if err != nil {
+			log.Fatalf("subscription get/create for %v failed: %v", scenariopubsub, err)
+		}
+
+		done1 := make(chan error, 1)
+		go func() {
+			ls := lspubsub.NewLengthySubscriber(nil, project, scenariopubsub, handleScenarioCompletion)
+			err := ls.Start(ctx0, done1)
+			if err != nil {
+				log.Fatalf("listener for scenario progress failed: %v", err)
+			}
+		}()
+	} else if scenariopubsub != "" && githubtoken == "" {
+		log.Printf("WARNING: --scenario-pubsub set but MOBINGI_DEPLOYER_KEY is empty; GitHub status updates disabled")
+	}
+
 	<-ctx.Done()
 	done <- <-done0
 }
@@ -705,6 +703,8 @@ func runCmd() *cobra.Command {
 	cmd.Flags().SortFlags = false
 	cmd.Flags().StringVar(&snssqs, "snssqs", snssqs, "name of the SNS topic and SQS queue")
 	cmd.Flags().StringVar(&pubsub, "pubsub", pubsub, "name of the GCP pubsub and subscription")
+	cmd.Flags().StringVar(&scenariopubsub, "scenario-pubsub", os.Getenv("SCENARIO_PUBSUB"), "pubsub subscription for scenario progress (e.g. oopsdev-scenarios)")
+	cmd.Flags().StringVar(&githubtoken, "github-token", os.Getenv("MOBINGI_DEPLOYER_KEY"), "Mobingi deployer key for commit status updates")
 	return cmd
 }
 
