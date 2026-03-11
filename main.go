@@ -280,6 +280,11 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 
 	metadata["total_scenarios"] = fmt.Sprintf("%d", len(filtered))
 
+	if len(filtered) > 0 {
+		app.runSummary[id] = &runSummary{}
+		app.runTracker[id] = len(filtered)
+	}
+
 	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
@@ -330,6 +335,11 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
 	metadata["total_scenarios"] = fmt.Sprintf("%d", len(filtered))
 
+	if len(filtered) > 0 {
+		app.runSummary[id] = &runSummary{}
+		app.runTracker[id] = len(filtered)
+	}
+
 	for _, f := range filtered {
 		nc := cmd{
 			Code:     "process",
@@ -355,11 +365,19 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 	return true
 }
 
+type runSummary struct {
+	Success         int
+	Failed          int
+	FailedScenarios []string
+}
+
 type appctx struct {
-	pub      *lspubsub.PubsubPublisher // starter publisher topic
-	rpub     *lspubsub.PubsubPublisher // topic to publish reports
-	mtx      *sync.Mutex
-	topicArn *string
+	pub        *lspubsub.PubsubPublisher // starter publisher topic
+	rpub       *lspubsub.PubsubPublisher // topic to publish reports
+	mtx        *sync.Mutex
+	topicArn   *string
+	runSummary map[string]*runSummary
+	runTracker map[string]int
 }
 
 // Our message processing callback.
@@ -464,6 +482,58 @@ func process(ctx any, data []byte) error {
 			Verbose:       verbose,
 			Metadata:      c.Metadata,
 			RunID:         c.ID,
+			OnScenarioDone: func(scenario, status string) {
+				if c.ID == "" {
+					return
+				}
+				rs, ok := app.runSummary[c.ID]
+				if !ok {
+					return
+				}
+				if status == "success" {
+					rs.Success++
+				} else {
+					rs.Failed++
+					rs.FailedScenarios = append(rs.FailedScenarios, filepath.Base(scenario))
+				}
+				app.runTracker[c.ID]--
+				if app.runTracker[c.ID] <= 0 {
+					if repslack != "" {
+						var summaryText strings.Builder
+						summaryTitle := "Test Run Complete"
+						summaryColor := "good"
+						total := rs.Success + rs.Failed
+						if rs.Failed > 0 {
+							summaryTitle = "Test Run Complete (With Failures)"
+							summaryColor = "danger"
+						}
+						fmt.Fprintf(&summaryText, "*Run Summary*\nTotal: %d\nPassed: %d\nFailed: %d", total, rs.Success, rs.Failed)
+						if len(rs.FailedScenarios) > 0 {
+							summaryText.WriteString("\n\n*Failed scenarios:*")
+							for _, name := range rs.FailedScenarios {
+								fmt.Fprintf(&summaryText, "\n• %v", name)
+							}
+						}
+						summaryPayload := SlackMessage{
+							Attachments: []SlackAttachment{
+								{
+									Color:     summaryColor,
+									Title:     summaryTitle,
+									Text:      summaryText.String(),
+									Footer:    fmt.Sprintf("oops • run: %v", c.ID),
+									Timestamp: time.Now().Unix(),
+									MrkdwnIn:  []string{"text"},
+								},
+							},
+						}
+						if err := summaryPayload.Notify(repslack); err != nil {
+							log.Printf("Notify (slack summary) failed: %v", err)
+						}
+					}
+					delete(app.runSummary, c.ID)
+					delete(app.runTracker, c.ID)
+				}
+			},
 		})
 	}
 
@@ -554,7 +624,9 @@ func run(ctx context.Context, done chan error) {
 	}
 
 	app := &appctx{
-		mtx: &sync.Mutex{},
+		mtx:        &sync.Mutex{},
+		runSummary: make(map[string]*runSummary),
+		runTracker: make(map[string]int),
 	}
 	ctx0, cancelCtx0 := context.WithCancel(ctx)
 	defer cancelCtx0()

@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-//SlackAttachment represents Slack Attachment structure for Slack API
+// SlackAttachment represents Slack Attachment structure for Slack API
 type SlackAttachment struct {
 	// Fallback is our simple fallback text equivalent.
 	Fallback string `json:"fallback"`
@@ -35,24 +35,28 @@ type SlackAttachment struct {
 	// a specific time. The attachment will display the additional timestamp value as part
 	// of the attachment's footer.
 	Timestamp int64 `json:"ts,omitempty"`
+
+	// MrkdwnIn lists fields where Slack mrkdwn formatting should be rendered.
+	MrkdwnIn []string `json:"mrkdwn_in,omitempty"`
 }
 
-//SlackMessage represents Slack message structure for Slack API
+// SlackMessage represents Slack message structure for Slack API
 type SlackMessage struct {
 	Attachments []SlackAttachment `json:"attachments"`
 }
 
-//Notify post the message via Slack API
+// Notify post the message via Slack API
 func (sn *SlackMessage) Notify(slackURL string) error {
 	bp, err := json.Marshal(sn)
 	if err != nil {
 		return err
 	}
 
-	_, err = http.Post(slackURL, "application/json", bytes.NewBuffer(bp))
+	resp, err := http.Post(slackURL, "application/json", bytes.NewBuffer(bp))
 	if err != nil {
 		return err
 	}
 
+	defer resp.Body.Close()
 	return nil
 }
