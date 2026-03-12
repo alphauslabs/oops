@@ -3,6 +3,7 @@ module github.com/alphauslabs/oops
 go 1.25.0
 
 require (
+	cloud.google.com/go/secretmanager v1.16.0
 	github.com/aws/aws-sdk-go v1.55.8
 	github.com/dchest/uniuri v1.2.0
 	github.com/flowerinthenight/longsub v1.6.0
@@ -20,7 +21,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.8.0 // indirect
 	cloud.google.com/go/iam v1.5.2 // indirect
 	cloud.google.com/go/pubsub v1.49.0 // indirect
-	cloud.google.com/go/secretmanager v1.16.0 // indirect
 	github.com/NYTimes/gizmo v1.3.6 // indirect
 	github.com/TylerBrock/colorjson v0.0.0-20200706003622-8a50f05110d2 // indirect
 	github.com/ajg/form v1.7.1 // indirect
