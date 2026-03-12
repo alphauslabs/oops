@@ -92,6 +92,8 @@ type ScenarioProgressMessage struct {
 	CommitSHA       string   `json:"commit_sha,omitempty"`
 	Repository      string   `json:"repository,omitempty"`
 	RunURL          string   `json:"run_url,omitempty"`
+	MissingTestsInPR bool     `json:"missing_tests_in_pr,omitempty"`
+	ShouldRunTests   bool     `json:"should_run_tests,omitempty"`
 }
 
 func runE(cmd *cobra.Command, args []string) error {
