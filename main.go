@@ -80,18 +80,18 @@ type cmd struct {
 }
 
 type ScenarioProgressMessage struct {
-	Status          string   `json:"status"`
-	Scenario        string   `json:"scenario"`
-	RunID           string   `json:"run_id"`
-	Data            string   `json:"data"`
-	TotalScenarios  string   `json:"total_scenarios"`
-	Code            string   `json:"code"`
-	OverallStatus   string   `json:"overall_status,omitempty"`
-	FailedCount     int64    `json:"failed_count,omitempty"`
-	FailedScenarios []string `json:"failed_scenarios,omitempty"`
-	CommitSHA       string   `json:"commit_sha,omitempty"`
-	Repository      string   `json:"repository,omitempty"`
-	RunURL          string   `json:"run_url,omitempty"`
+	Status           string   `json:"status"`
+	Scenario         string   `json:"scenario"`
+	RunID            string   `json:"run_id"`
+	Data             string   `json:"data"`
+	TotalScenarios   string   `json:"total_scenarios"`
+	Code             string   `json:"code"`
+	OverallStatus    string   `json:"overall_status,omitempty"`
+	FailedCount      int64    `json:"failed_count,omitempty"`
+	FailedScenarios  []string `json:"failed_scenarios,omitempty"`
+	CommitSHA        string   `json:"commit_sha,omitempty"`
+	Repository       string   `json:"repository,omitempty"`
+	RunURL           string   `json:"run_url,omitempty"`
 	MissingTestsInPR bool     `json:"missing_tests_in_pr,omitempty"`
 	ShouldRunTests   bool     `json:"should_run_tests,omitempty"`
 }
@@ -666,7 +666,7 @@ func run(ctx context.Context, done chan error) {
 		}
 	}
 
-	if scenariopubsub != "" && githubtoken != "" && pubsub != "" {
+	if scenariopubsub != "" && pubsub != "" {
 		log.Printf("starting scenario progress listener on %v", scenariopubsub)
 
 		_, st, err := lspubsub.GetPublisher(project, scenariopubsub)
@@ -687,8 +687,6 @@ func run(ctx context.Context, done chan error) {
 				log.Fatalf("listener for scenario progress failed: %v", err)
 			}
 		}()
-	} else if scenariopubsub != "" && githubtoken == "" {
-		log.Printf("WARNING: --scenario-pubsub set but github token is empty; set --secret-project-id or --github-token to enable GitHub status updates")
 	}
 
 	<-ctx.Done()
