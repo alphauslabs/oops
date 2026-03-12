@@ -673,6 +673,9 @@ func run(ctx context.Context, done chan error) {
 	}
 
 	if scenariopubsub != "" && pubsub != "" {
+		if githubtoken == "" {
+			log.Printf("WARNING: githubtoken is empty; scenario progress listener will run, but GitHub repository_dispatch will be skipped")
+		}
 		log.Printf("starting scenario progress listener on %v", scenariopubsub)
 
 		_, st, err := lspubsub.GetPublisher(project, scenariopubsub)
