@@ -399,7 +399,7 @@ func doScenario(in *doScenarioInput) error {
 					attr["pubsub"] = pubsub
 				}
 				if in.Metadata != nil {
-					for _, key := range []string{"pr_number", "branch", "commit_sha", "actor", "trigger_type", "run_url", "repository", "workflow", "total_scenarios"} {
+					for _, key := range []string{"pr_number", "branch", "commit_sha", "actor", "trigger_type", "run_url", "repository", "workflow", "total_scenarios", "missing_tests_in_pr", "should_run_tests"} {
 						if v, ok := in.Metadata[key].(string); ok && v != "" {
 							attr[key] = v
 						}
