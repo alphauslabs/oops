@@ -278,6 +278,9 @@ func filterScenariosByAffectedServices(files []string, affectedServices []string
 
 func distributePubsub(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}, forceAll bool) bool {
 	id := runID
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
 	final := combineFilesAndDir()
 	if !forceAll {
 		affectedServices := extractAffectedServices(metadata)
@@ -329,6 +332,9 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 	}
 
 	id := runID
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
 	final := combineFilesAndDir()
 	if !forceAll {
 		affectedServices := extractAffectedServices(metadata)
