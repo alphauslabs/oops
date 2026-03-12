@@ -540,10 +540,16 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 					fmt.Fprintf(&sb, "\n• %v", name)
 				}
 			}
+			if msg.RunURL != "" {
+				fmt.Fprintf(&sb, "\n\n<%s|View run>", msg.RunURL)
+			}
 			text = sb.String()
 		} else {
 			title = "Test Run Complete"
 			text = fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
+			if msg.RunURL != "" {
+				text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
+			}
 		}
 
 		payload := SlackMessage{
