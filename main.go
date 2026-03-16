@@ -94,6 +94,7 @@ type ScenarioProgressMessage struct {
 	RunURL           string   `json:"run_url,omitempty"`
 	MissingTestsInPR bool     `json:"missing_tests_in_pr,omitempty"`
 	ShouldRunTests   bool     `json:"should_run_tests,omitempty"`
+	PRNumber         string   `json:"pr_number,omitempty"`
 }
 
 func runE(cmd *cobra.Command, args []string) error {

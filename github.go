@@ -35,6 +35,7 @@ func sendRepositoryDispatch(token string, msg *ScenarioProgressMessage) error {
 			"total_scenarios": msg.TotalScenarios,
 			"missing_tests_in_pr":  msg.MissingTestsInPR,
             "should_run_tests":     msg.ShouldRunTests,
+			"pr_number":           msg.PRNumber,
 		},
 	}
 
@@ -66,8 +67,8 @@ func sendRepositoryDispatch(token string, msg *ScenarioProgressMessage) error {
 		return fmt.Errorf("github API returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	log.Printf("repository_dispatch sent: repo=%s sha=%s run_id=%s overall_status=%s missing_tests_in_pr=%v should_run_tests=%v",
-    msg.Repository, msg.CommitSHA, msg.RunID, msg.OverallStatus, msg.MissingTestsInPR, msg.ShouldRunTests)
+	log.Printf("repository_dispatch sent: repo=%s sha=%s run_id=%s pr_number=%s overall_status=%s missing_tests_in_pr=%v should_run_tests=%v",
+    msg.Repository, msg.CommitSHA, msg.RunID, msg.PRNumber, msg.OverallStatus, msg.MissingTestsInPR, msg.ShouldRunTests)
 
 	return nil
 }
