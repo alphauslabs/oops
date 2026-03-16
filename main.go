@@ -530,10 +530,20 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 			successCount = t - msg.FailedCount
 		}
 
+		env := "dev"
+		if strings.Contains(pubsub, "prod") {
+			env = "prod"
+		} else if strings.Contains(pubsub, "next") {
+			env = "next"
+		}
+
+		header := fmt.Sprintf("*Environment:* %s\n", env)
+
 		if msg.OverallStatus == "failure" || msg.FailedCount > 0 {
 			color = "danger"
 			title = "Test Run Complete (With Failures)"
 			var sb strings.Builder
+			sb.WriteString(header)
 			fmt.Fprintf(&sb, "*Run Summary*\nTotal: %s\nPassed: %d\nFailed: %d", total, successCount, msg.FailedCount)
 			if len(msg.FailedScenarios) > 0 {
 				sb.WriteString("\n\n*Failed scenarios:*")
@@ -547,7 +557,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 			text = sb.String()
 		} else {
 			title = "Test Run Complete"
-			text = fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
+			text = header + fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
 			if msg.RunURL != "" {
 				text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
 			}
@@ -559,7 +569,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 					Color:     color,
 					Title:     title,
 					Text:      text,
-					Footer:    fmt.Sprintf("oops • run: %v", msg.RunID),
+					Footer:    fmt.Sprintf("oops • runid: %v", msg.RunID),
 					Timestamp: time.Now().Unix(),
 					MrkdwnIn:  []string{"text"},
 				},
