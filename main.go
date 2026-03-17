@@ -95,6 +95,7 @@ type ScenarioProgressMessage struct {
 	MissingTestsInPR bool     `json:"missing_tests_in_pr,omitempty"`
 	ShouldRunTests   bool     `json:"should_run_tests,omitempty"`
 	PRNumber         string   `json:"pr_number,omitempty"`
+	ApprovalCount    int      `json:"approval_count,omitempty"`
 }
 
 func runE(cmd *cobra.Command, args []string) error {
@@ -505,80 +506,94 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 
 	log.Printf("scenario progress: run_id=%s code=%s progress=%s", msg.RunID, msg.Code, msg.TotalScenarios)
 
-	if msg.Code != "completed" {
-		return nil
-	}
+	switch msg.Code {
+	case "approve":
+		log.Printf("received approve event: repo=%s sha=%s approvals=%d",
+			msg.Repository, msg.CommitSHA, msg.ApprovalCount)
 
-	log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
-		msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
-
-	if err := sendRepositoryDispatch(githubtoken, &msg); err != nil {
-		log.Printf("sendRepositoryDispatch failed: %v", err)
-	}
-
-	if repslack != "" {
-		color := "good"
-		title := "Tests Done."
-		var text string
-
-		parts := strings.SplitN(msg.TotalScenarios, "/", 2)
-		total := parts[len(parts)-1]
-		successCount := int64(0)
-		if len(parts) == 2 {
-			var t int64
-			fmt.Sscanf(parts[1], "%d", &t)
-			successCount = t - msg.FailedCount
+		if msg.CommitSHA == "" || msg.Repository == "" {
+			log.Printf("approve: missing commit_sha or repository, skipping")
+			return nil
 		}
 
-		env := "dev"
-		if strings.Contains(pubsub, "prod") {
-			env = "prod"
-		} else if strings.Contains(pubsub, "next") {
-			env = "next"
+		if err := sendApprovalStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.PRNumber, msg.RunURL, msg.ApprovalCount); err != nil {
+        log.Printf("sendApprovalStatus failed: %v", err)
+    }
+
+	case "completed":
+		log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
+			msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
+
+		if err := sendRepositoryDispatch(githubtoken, &msg); err != nil {
+			log.Printf("sendRepositoryDispatch failed: %v", err)
 		}
 
-		header := fmt.Sprintf("*Environment:* %s\n", env)
+		if repslack != "" {
+			color := "good"
+			title := "Tests Done."
+			var text string
 
-		if msg.OverallStatus == "failure" || msg.FailedCount > 0 {
-			color = "danger"
-			title = "Test Run Complete (With Failures)"
-			var sb strings.Builder
-			sb.WriteString(header)
-			fmt.Fprintf(&sb, "*Run Summary*\nTotal: %s\nPassed: %d\nFailed: %d", total, successCount, msg.FailedCount)
-			if len(msg.FailedScenarios) > 0 {
-				sb.WriteString("\n\n*Failed scenarios:*")
-				for _, name := range msg.FailedScenarios {
-					fmt.Fprintf(&sb, "\n• %v", name)
+			parts := strings.SplitN(msg.TotalScenarios, "/", 2)
+			total := parts[len(parts)-1]
+			successCount := int64(0)
+			if len(parts) == 2 {
+				var t int64
+				fmt.Sscanf(parts[1], "%d", &t)
+				successCount = t - msg.FailedCount
+			}
+
+			env := "dev"
+			if strings.Contains(pubsub, "prod") {
+				env = "prod"
+			} else if strings.Contains(pubsub, "next") {
+				env = "next"
+			}
+
+			header := fmt.Sprintf("*Environment:* %s\n", env)
+
+			if msg.OverallStatus == "failure" || msg.FailedCount > 0 {
+				color = "danger"
+				title = "Test Run Complete (With Failures)"
+				var sb strings.Builder
+				sb.WriteString(header)
+				fmt.Fprintf(&sb, "*Run Summary*\nTotal: %s\nPassed: %d\nFailed: %d", total, successCount, msg.FailedCount)
+				if len(msg.FailedScenarios) > 0 {
+					sb.WriteString("\n\n*Failed scenarios:*")
+					for _, name := range msg.FailedScenarios {
+						fmt.Fprintf(&sb, "\n• %v", name)
+					}
+				}
+				if msg.RunURL != "" {
+					fmt.Fprintf(&sb, "\n\n<%s|View run>", msg.RunURL)
+				}
+				text = sb.String()
+			} else {
+				title = "Test Run Complete"
+				text = header + fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
+				if msg.RunURL != "" {
+					text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
 				}
 			}
-			if msg.RunURL != "" {
-				fmt.Fprintf(&sb, "\n\n<%s|View run>", msg.RunURL)
-			}
-			text = sb.String()
-		} else {
-			title = "Test Run Complete"
-			text = header + fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
-			if msg.RunURL != "" {
-				text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
-			}
-		}
 
-		payload := SlackMessage{
-			Attachments: []SlackAttachment{
-				{
-					Color:     color,
-					Title:     title,
-					Text:      text,
-					Footer:    fmt.Sprintf("oops • runid: %v", msg.RunID),
-					Timestamp: time.Now().Unix(),
-					MrkdwnIn:  []string{"text"},
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color:     color,
+						Title:     title,
+						Text:      text,
+						Footer:    fmt.Sprintf("oops • runid: %v", msg.RunID),
+						Timestamp: time.Now().Unix(),
+						MrkdwnIn:  []string{"text"},
+					},
 				},
-			},
+			}
+
+			if err := payload.Notify(repslack); err != nil {
+				log.Printf("Notify (slack) failed: %v", err)
+			}
 		}
 
-		if err := payload.Notify(repslack); err != nil {
-			log.Printf("Notify (slack) failed: %v", err)
-		}
+	default:
 	}
 
 	return nil
