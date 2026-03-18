@@ -96,6 +96,7 @@ type ScenarioProgressMessage struct {
 	ShouldRunTests   bool     `json:"should_run_tests,omitempty"`
 	PRNumber         string   `json:"pr_number,omitempty"`
 	ApprovalCount    int      `json:"approval_count,omitempty"`
+	Reviewers        string   `json:"reviewers,omitempty"`
 }
 
 func runE(cmd *cobra.Command, args []string) error {
@@ -508,16 +509,53 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 
 	switch msg.Code {
 	case "approve":
-		log.Printf("received approve event: repo=%s sha=%s approvals=%d",
-			msg.Repository, msg.CommitSHA, msg.ApprovalCount)
+    log.Printf("received approve event: repo=%s sha=%s approvals=%d reviewers=%s",
+        msg.Repository, msg.CommitSHA, msg.ApprovalCount, msg.Reviewers)
 
-		if msg.CommitSHA == "" || msg.Repository == "" {
-			log.Printf("approve: missing commit_sha or repository, skipping")
-			return nil
-		}
+    if msg.CommitSHA == "" || msg.Repository == "" {
+        log.Printf("approve: missing commit_sha or repository, skipping")
+        return nil
+    }
 
-		if err := sendApprovalStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.PRNumber, msg.RunURL, msg.ApprovalCount); err != nil {
+    if err := sendApprovalStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.PRNumber, msg.RunURL, msg.ApprovalCount, msg.Reviewers); err != nil {
         log.Printf("sendApprovalStatus failed: %v", err)
+    }
+
+    if repslack != "" {
+        reviewerMentions := ""
+        if msg.Reviewers != "" {
+            var mentions []string
+            for _, r := range strings.Split(msg.Reviewers, ",") {
+                mentions = append(mentions, "@"+strings.TrimSpace(r))
+            }
+            reviewerMentions = strings.Join(mentions, " ")
+        }
+
+        color := "good"
+        title := "PR Approved"
+        text := fmt.Sprintf("*Repository:* %s\n*PR:* #%s\n*Reviewers:* %s\n*Approval Count:* %d",
+            msg.Repository, msg.PRNumber, reviewerMentions, msg.ApprovalCount)
+
+        if msg.RunURL != "" {
+            text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
+        }
+
+        payload := SlackMessage{
+            Attachments: []SlackAttachment{
+                {
+                    Color:     color,
+                    Title:     title,
+                    Text:      text,
+                    Footer:    "oops • approval",
+                    Timestamp: time.Now().Unix(),
+                    MrkdwnIn:  []string{"text"},
+                },
+            },
+        }
+
+        if err := payload.Notify(repslack); err != nil {
+            log.Printf("Notify (slack) failed: %v", err)
+        }
     }
 
 	case "completed":
