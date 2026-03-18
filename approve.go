@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 )
 
 type commitStatusPayload struct {
@@ -16,12 +17,12 @@ type commitStatusPayload struct {
 	Context     string `json:"context"`
 }
 
-func sendApprovalStatus(token, commitSHA, repository, prNumber, runURL string, approvalCount int) error {
+func sendApprovalStatus(token, commitSHA, repository, prNumber, runURL string, approvalCount int, reviewers string) error {
 	if token == "" {
 		return fmt.Errorf("github token is empty, skipping approval status update")
 	}
 
-	current, err := getCurrentOopstestStatus(token, commitSHA, repository)
+	current, currentDesc, err := getCurrentOopstestStatus(token, commitSHA, repository)
 	if err != nil {
 		log.Printf("could not fetch current status, skipping: %v", err)
 		return nil
@@ -35,16 +36,24 @@ func sendApprovalStatus(token, commitSHA, repository, prNumber, runURL string, a
 			return nil
 		}
 		state = "success"
-		description = fmt.Sprintf("Overridden by approval — approved by %d reviewers", approvalCount)
-		log.Printf("approval threshold met (%d), setting ci/oopstest to success: repo=%s sha=%s",
-			approvalCount, repository, commitSHA)
+		desc := fmt.Sprintf("Overridden by approval — reviewed by: %s (%d reviewers)", reviewers, approvalCount)
+		if len(desc) > 140 {
+			desc = fmt.Sprintf("Overridden by approval — %d reviewers approved", approvalCount)
+		}
+		description = desc
+		log.Printf("approval threshold met (%d), setting ci/oopstest to success: repo=%s sha=%s reviewers=%s",
+			approvalCount, repository, commitSHA, reviewers)
 	} else {
 		if current != "success" {
 			log.Printf("ci/oopstest is '%s', no revert needed (approvals=%d)", current, approvalCount)
 			return nil
 		}
+		if !strings.Contains(currentDesc, "Overridden by approval") {
+			log.Printf("ci/oopstest success was from real test run, not reverting (desc=%q)", currentDesc)
+			return nil
+		}
 		state = "failure"
-		description = fmt.Sprintf("Approval override removed — approvals dropped to %d", approvalCount)
+		description = fmt.Sprintf("Approval override removed — reviewer count dropped to %d", approvalCount)
 		log.Printf("approval count dropped (%d), reverting ci/oopstest: repo=%s sha=%s",
 			approvalCount, repository, commitSHA)
 	}
@@ -52,12 +61,12 @@ func sendApprovalStatus(token, commitSHA, repository, prNumber, runURL string, a
 	return postCommitStatus(token, commitSHA, repository, runURL, state, description)
 }
 
-func getCurrentOopstestStatus(token, commitSHA, repository string) (string, error) {
+func getCurrentOopstestStatus(token, commitSHA, repository string) (string, string, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/commits/%s/statuses", repository, commitSHA)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return "", fmt.Errorf("http.NewRequest: %w", err)
+		return "", "", fmt.Errorf("http.NewRequest: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -66,27 +75,28 @@ func getCurrentOopstestStatus(token, commitSHA, repository string) (string, erro
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("http request failed: %w", err)
+		return "", "", fmt.Errorf("http request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	var statuses []struct {
-		Context string `json:"context"`
-		State   string `json:"state"`
+		Context     string `json:"context"`
+		State       string `json:"state"`
+		Description string `json:"description"`
 	}
 
 	body, _ := io.ReadAll(resp.Body)
 	if err := json.Unmarshal(body, &statuses); err != nil {
-		return "", fmt.Errorf("unmarshal statuses: %w", err)
+		return "", "", fmt.Errorf("unmarshal statuses: %w", err)
 	}
 
 	for _, s := range statuses {
 		if s.Context == "ci/oopstest" {
-			return s.State, nil
+			return s.State, s.Description, nil
 		}
 	}
 
-	return "", nil
+	return "", "", nil
 }
 
 func postCommitStatus(token, commitSHA, repository, targetURL, state, description string) error {
@@ -125,6 +135,7 @@ func postCommitStatus(token, commitSHA, repository, targetURL, state, descriptio
 		return fmt.Errorf("github API returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	log.Printf("ci/oopstest updated: state=%s repo=%s sha=%s target_url=%s", state, repository, commitSHA, targetURL)
+	log.Printf("ci/oopstest updated: state=%s repo=%s sha=%s target_url=%s",
+		state, repository, commitSHA, targetURL)
 	return nil
 }
