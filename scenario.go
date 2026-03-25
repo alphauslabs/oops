@@ -170,7 +170,6 @@ type doScenarioInput struct {
 	Verbose        bool
 	Metadata       map[string]interface{}
 	RunID          string
-	Cancelled      bool
 	cancelCtx      context.Context
 	OnScenarioDone func(scenario, status string)
 }
@@ -207,7 +206,9 @@ func doScenario(in *doScenarioInput) error {
 		if in.cancelCtx != nil {
 			select {
 			case <-in.cancelCtx.Done():
-				in.Cancelled = true
+				log.Printf("doScenario: cancelled before starting %v, publishing cancelled result", filepath.Base(f))
+				publishCancelledResult(in.app, f, in)
+				continue
 			default:
 			}
 		}
@@ -356,11 +357,18 @@ func doScenario(in *doScenarioInput) error {
 		if len(s.errs) > 0 {
 			log.Printf("errs: %v", s.errs)
 		}
+		if in.cancelCtx != nil {
+			select {
+			case <-in.cancelCtx.Done():
+				log.Printf("doScenario: cancelled mid-flight for %v, publishing cancelled result", filepath.Base(f))
+				publishCancelledResult(in.app, f, in)
+				continue
+			default:
+			}
+		}
 
 		if in.ReportSlack != "" {
-			if in.Cancelled {
-				log.Printf("scenario %v completed mid-flight after cancel, skipping per-scenario Slack", filepath.Base(f))
-			} else if len(s.errs) > 0 {
+			if len(s.errs) > 0 {
 				// Send failure notification to slack
 				payload := SlackMessage{
 					Attachments: []SlackAttachment{
