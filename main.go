@@ -391,46 +391,56 @@ type appctx struct {
 	topicArn *string
 
 	activeRunsMu sync.RWMutex
-	activeRuns   map[string]context.CancelFunc
+	activeRuns   map[string]map[string]context.CancelFunc
 	pendingCancelsMu sync.RWMutex
 	pendingCancels   map[string]struct{}
 }
 
-// registerRun registers a cancel function for the given commitSHA.
-func (a *appctx) registerRun(commitSHA string, cancel context.CancelFunc) {
+func (a *appctx) registerRun(commitSHA string, cancel context.CancelFunc) string {
 	if commitSHA == "" {
-		return
+		return ""
 	}
+	instanceID := uniuri.NewLen(12)
 	a.activeRunsMu.Lock()
 	defer a.activeRunsMu.Unlock()
 	if a.activeRuns == nil {
-		a.activeRuns = make(map[string]context.CancelFunc)
+		a.activeRuns = make(map[string]map[string]context.CancelFunc)
 	}
-	a.activeRuns[commitSHA] = cancel
+	if a.activeRuns[commitSHA] == nil {
+		a.activeRuns[commitSHA] = make(map[string]context.CancelFunc)
+	}
+	a.activeRuns[commitSHA][instanceID] = cancel
+	return instanceID
 }
 
-// unregisterRun removes the cancel function for the given commitSHA.
-func (a *appctx) unregisterRun(commitSHA string) {
-	if commitSHA == "" {
+func (a *appctx) unregisterRun(commitSHA, instanceID string) {
+	if commitSHA == "" || instanceID == "" {
 		return
 	}
 	a.activeRunsMu.Lock()
 	defer a.activeRunsMu.Unlock()
-	delete(a.activeRuns, commitSHA)
+	delete(a.activeRuns[commitSHA], instanceID)
+	if len(a.activeRuns[commitSHA]) == 0 {
+		delete(a.activeRuns, commitSHA)
+	}
 }
 
-// cancelRun cancels an active run by commitSHA and returns true if the run was found.
+// cancelRun cancels every in-flight scenario for commitSHA and returns true
+// if at least one was found.
 func (a *appctx) cancelRun(commitSHA string) bool {
 	if commitSHA == "" {
 		return false
 	}
 	a.activeRunsMu.RLock()
-	cancel, ok := a.activeRuns[commitSHA]
+	funcs := a.activeRuns[commitSHA]
 	a.activeRunsMu.RUnlock()
-	if !ok {
+	if len(funcs) == 0 {
 		return false
 	}
-	cancel()
+	for _, cancel := range funcs {
+		cancel()
+	}
+	log.Printf("cancelRun: commit_sha=%s cancelled %d in-flight scenario(s)", commitSHA, len(funcs))
 	return true
 }
 
@@ -567,9 +577,10 @@ func process(ctx any, data []byte) error {
 
 		runCtx, runCancel := context.WithCancel(context.Background())
 		defer runCancel()
+		var instanceID string
 		if commitSHA != "" {
-			app.registerRun(commitSHA, runCancel)
-			defer app.unregisterRun(commitSHA)
+			instanceID = app.registerRun(commitSHA, runCancel)
+			defer app.unregisterRun(commitSHA, instanceID)
 		}
 
 		in := &doScenarioInput{
