@@ -467,6 +467,15 @@ func (a *appctx) isCancelled(commitSHA string) bool {
 	return ok
 }
 
+func (a *appctx) unmarkCancelled(commitSHA string) {
+	if commitSHA == "" {
+		return
+	}
+	a.pendingCancelsMu.Lock()
+	defer a.pendingCancelsMu.Unlock()
+	delete(a.pendingCancels, commitSHA)
+	log.Printf("unmarkCancelled: commit_sha=%s tombstone cleared", commitSHA)
+}
 // Our message processing callback.
 func process(ctx any, data []byte) error {
 	app := ctx.(*appctx)
@@ -735,6 +744,10 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 	case "completed":
 		log.Printf("run completed: run_id=%s overall_status=%s failed=%d cancelled=%d repo=%s sha=%s",
 			msg.RunID, msg.OverallStatus, msg.FailedCount, msg.CancelledCount, msg.Repository, msg.CommitSHA)
+		if app != nil {
+			app.unmarkCancelled(msg.CommitSHA)
+		}
+
 		if msg.CancelledCount > 0 {
 			log.Printf("completed: run_id=%s has %d cancelled scenario(s), skipping dispatch and notifications", msg.RunID, msg.CancelledCount)
 			return nil
@@ -872,8 +885,6 @@ func run(ctx context.Context, done chan error) {
 		}
 
 		go func() {
-			// Messages should be payer level. We will subdivide linked accts to separate messages for
-			// linked-acct-level processing.
 			ls := lspubsub.NewLengthySubscriber(app, project, pubsub, process)
 			err = ls.Start(ctx0, done0)
 			if err != nil {
