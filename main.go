@@ -389,11 +389,17 @@ type appctx struct {
 	rpub     *lspubsub.PubsubPublisher // topic to publish reports
 	mtx      *sync.Mutex
 	topicArn *string
+
 	activeRunsMu sync.RWMutex
 	activeRuns   map[string]context.CancelFunc
+
+	// FIX Gap 1: tombstone set for cancellations that arrive before process() registers the run.
+	// commit_sha is used as the key because it is the only identifier the PR close event carries.
+	pendingCancelsMu sync.RWMutex
+	pendingCancels   map[string]struct{}
 }
-	// commit_sha is used as the key because it is the only identifier the PR close event
-    // registerRun registers a cancel function for the given commitSHA.
+
+// registerRun registers a cancel function for the given commitSHA.
 func (a *appctx) registerRun(commitSHA string, cancel context.CancelFunc) {
 	if commitSHA == "" {
 		return
@@ -429,6 +435,29 @@ func (a *appctx) cancelRun(commitSHA string) bool {
 	}
 	cancel()
 	return true
+}
+
+func (a *appctx) markCancelled(commitSHA string) {
+	if commitSHA == "" {
+		return
+	}
+	a.pendingCancelsMu.Lock()
+	defer a.pendingCancelsMu.Unlock()
+	if a.pendingCancels == nil {
+		a.pendingCancels = make(map[string]struct{})
+	}
+	a.pendingCancels[commitSHA] = struct{}{}
+	log.Printf("markCancelled: commit_sha=%s tombstoned", commitSHA)
+}
+
+func (a *appctx) isCancelled(commitSHA string) bool {
+	if commitSHA == "" {
+		return false
+	}
+	a.pendingCancelsMu.RLock()
+	defer a.pendingCancelsMu.RUnlock()
+	_, ok := a.pendingCancels[commitSHA]
+	return ok
 }
 
 // Our message processing callback.
@@ -525,9 +554,22 @@ func process(ctx any, data []byte) error {
 		}
 	case "process":
 		log.Printf("process: %+v", c)
+		commitSHA, _ := c.Metadata["commit_sha"].(string)
+		if commitSHA != "" && app.isCancelled(commitSHA) {
+			log.Printf("process: commit_sha=%s is tombstoned, publishing cancelled result for %s", commitSHA, c.Scenario)
+			in := &doScenarioInput{
+				app:          app,
+				ScenarioFiles: []string{c.Scenario},
+				ReportPubsub: reppubsub,
+				Metadata:     c.Metadata,
+				RunID:        c.ID,
+			}
+			publishCancelledResult(app, c.Scenario, in)
+			return nil
+		}
+
 		runCtx, runCancel := context.WithCancel(context.Background())
 		defer runCancel()
-		commitSHA, _ := c.Metadata["commit_sha"].(string)
 		if commitSHA != "" {
 			app.registerRun(commitSHA, runCancel)
 			defer app.unregisterRun(commitSHA)
@@ -545,7 +587,7 @@ func process(ctx any, data []byte) error {
 		}
 		select {
 		case <-runCtx.Done():
-			log.Printf("process: commit_sha=%s already cancelled, publishing cancelled result for %s", commitSHA, c.Scenario)
+			log.Printf("process: commit_sha=%s cancelled just after register, publishing cancelled result for %s", commitSHA, c.Scenario)
 			publishCancelledResult(app, c.Scenario, in)
 			return nil
 		default:
@@ -579,6 +621,9 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 			log.Printf("cancel: missing commit_sha, skipping")
 			return nil
 		}
+		if app != nil {
+			app.markCancelled(msg.CommitSHA)
+		}
 
 		cancelled := false
 		if app != nil {
@@ -588,7 +633,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 		if cancelled {
 			log.Printf("cancel: commit_sha=%s cancelled successfully", msg.CommitSHA)
 		} else {
-			log.Printf("cancel: commit_sha=%s not found in active runs (may have already finished)", msg.CommitSHA)
+			log.Printf("cancel: commit_sha=%s not found in active runs (may have already finished or not yet registered)", msg.CommitSHA)
 		}
 
 		if msg.Repository != "" {

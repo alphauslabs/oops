@@ -73,7 +73,7 @@ func (s Scenario) getHead(file string) ([]byte, error) {
 }
 
 // RunScript runs file and returns the combined stdout+stderr result.
-func (s *Scenario) RunScript(file string) ([]byte, error) {
+func (s *Scenario) RunScript(ctx context.Context, file string) ([]byte, error) {
 	l1, err := s.getHead(file)
 	if err != nil {
 		return nil, err
@@ -90,10 +90,10 @@ func (s *Scenario) RunScript(file string) ([]byte, error) {
 	var c *exec.Cmd
 	switch {
 	case strings.Contains(runner, "python"):
-		c = exec.Command(runner, file)
+		c = exec.CommandContext(ctx, runner, file)
 	default:
 		// Assume it's a shell interpreter.
-		c = exec.Command(runner, "-c", file)
+		c = exec.CommandContext(ctx, runner, "-c", file)
 	}
 
 	c.Env = os.Environ()
@@ -110,7 +110,7 @@ func (s *Scenario) RunScript(file string) ([]byte, error) {
 // ParseValue tries to check if contents is in script form and if it is, writes it
 // to disk as an executable, runs it and returns the resulting stream output.
 // Otherwise, return the contents as is.
-func (s *Scenario) ParseValue(contents string, file ...string) (string, error) {
+func (s *Scenario) ParseValue(ctx context.Context, contents string, file ...string) (string, error) {
 	if strings.HasPrefix(contents, "#!") {
 		f := fmt.Sprintf("oops_%v", uuid.NewString())
 		f = filepath.Join(os.TempDir(), f)
@@ -123,7 +123,7 @@ func (s *Scenario) ParseValue(contents string, file ...string) (string, error) {
 			return contents, err
 		}
 
-		b, err := s.RunScript(f)
+		b, err := s.RunScript(ctx, f)
 		return string(b), err
 	}
 
@@ -171,7 +171,7 @@ type doScenarioInput struct {
 	Metadata       map[string]interface{}
 	RunID          string
 	Cancelled      bool
-	cancelCtx      context.Context 
+	cancelCtx      context.Context
 	OnScenarioDone func(scenario, status string)
 }
 
@@ -198,6 +198,11 @@ func isAllowed(s *Scenario) bool {
 }
 
 func doScenario(in *doScenarioInput) error {
+	scriptCtx := context.Background()
+	if in.cancelCtx != nil {
+		scriptCtx = in.cancelCtx
+	}
+
 	for _, f := range in.ScenarioFiles {
 		if in.cancelCtx != nil {
 			select {
@@ -231,7 +236,7 @@ func doScenario(in *doScenarioInput) error {
 			basef := filepath.Base(f)
 			fn := filepath.Join(os.TempDir(), fmt.Sprintf("%v_prepare", basef))
 			fn, _ = s.WriteScript(fn, s.Prepare)
-			b, err := s.RunScript(fn)
+			b, err := s.RunScript(scriptCtx, fn)
 			if err != nil {
 				s.errs = append(s.errs, errors.Wrapf(err,
 					"prepare:\n%v: %v", s.Prepare, string(b)))
@@ -248,7 +253,7 @@ func doScenario(in *doScenarioInput) error {
 
 			// Parse url.
 			fn := fmt.Sprintf("%v_url", prefix)
-			nv, err := s.ParseValue(run.HTTP.URL, fn)
+			nv, err := s.ParseValue(scriptCtx, run.HTTP.URL, fn)
 			if err != nil {
 				s.errs = append(s.errs, errors.Wrapf(err, "ParseValue[%v]: %v", i, run.HTTP.URL))
 				continue
@@ -264,7 +269,7 @@ func doScenario(in *doScenarioInput) error {
 			req := e.Request(run.HTTP.Method, u.Path)
 			for k, v := range run.HTTP.Headers {
 				fn := fmt.Sprintf("%v_hdr.%v", prefix, k)
-				nv, err := s.ParseValue(v, fn)
+				nv, err := s.ParseValue(scriptCtx, v, fn)
 				if err != nil {
 					s.errs = append(s.errs, errors.Wrapf(err, "ParseValue[%v]: %v", i, v))
 					continue
@@ -276,7 +281,7 @@ func doScenario(in *doScenarioInput) error {
 
 			for k, v := range run.HTTP.QueryParams {
 				fn := fmt.Sprintf("%v_qparams.%v", prefix, k)
-				nv, _ := s.ParseValue(v, fn)
+				nv, _ := s.ParseValue(scriptCtx, v, fn)
 				req = req.WithQuery(k, nv)
 			}
 
@@ -285,19 +290,19 @@ func doScenario(in *doScenarioInput) error {
 			}
 			for k, v := range run.HTTP.Files {
 				fn := fmt.Sprintf("%v_files.%v", prefix, k)
-				nv, _ := s.ParseValue(v, fn)
+				nv, _ := s.ParseValue(scriptCtx, v, fn)
 				req = req.WithFile(k, nv)
 			}
 
 			for k, v := range run.HTTP.Forms {
 				fn := fmt.Sprintf("%v_forms.%v", prefix, k)
-				nv, _ := s.ParseValue(v, fn)
+				nv, _ := s.ParseValue(scriptCtx, v, fn)
 				req = req.WithFormField(k, nv)
 			}
 
 			if run.HTTP.Payload != "" {
 				fn := fmt.Sprintf("%v_payload", prefix)
-				nv, _ := s.ParseValue(run.HTTP.Payload, fn)
+				nv, _ := s.ParseValue(scriptCtx, run.HTTP.Payload, fn)
 				req = req.WithBytes([]byte(nv))
 			}
 
@@ -321,7 +326,7 @@ func doScenario(in *doScenarioInput) error {
 			if run.HTTP.Asserts.Script != "" {
 				fn := fmt.Sprintf("%v_assertscript", prefix)
 				s.WriteScript(fn, run.HTTP.Asserts.Script)
-				b, err := s.RunScript(fn)
+				b, err := s.RunScript(scriptCtx, fn)
 				if err != nil {
 					s.errs = append(s.errs, errors.Wrapf(err,
 						"assert.script[%v]:\n%v: %v", i, run.HTTP.Asserts.Script, string(b)))
@@ -337,7 +342,7 @@ func doScenario(in *doScenarioInput) error {
 			basef := filepath.Base(f)
 			fn := filepath.Join(os.TempDir(), fmt.Sprintf("%v_check", basef))
 			fn, _ = s.WriteScript(fn, s.Check)
-			b, err := s.RunScript(fn)
+			b, err := s.RunScript(scriptCtx, fn)
 			if err != nil {
 				s.errs = append(s.errs, errors.Wrapf(err,
 					"check:\n%v: %v", s.Check, string(b)))
@@ -464,7 +469,12 @@ func doScenario(in *doScenarioInput) error {
 // publishCancelledResult publishes a "cancelled" status to oopsdev-report for a
 // scenario that was skipped due to a PR close cancellation.
 func publishCancelledResult(app *appctx, scenarioFile string, in *doScenarioInput) {
-	if app == nil || app.rpub == nil || in.ReportPubsub == "" {
+	if app == nil || app.rpub == nil {
+		log.Printf("publishCancelledResult: rpub not initialised, cannot publish cancelled result for %v (run_id=%v) — batch total may never complete", scenarioFile, in.RunID)
+		return
+	}
+	if in.ReportPubsub == "" {
+		log.Printf("publishCancelledResult: report-pubsub not set, cannot publish cancelled result for %v (run_id=%v) — batch total may never complete", scenarioFile, in.RunID)
 		return
 	}
 
