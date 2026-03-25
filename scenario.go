@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -169,6 +170,8 @@ type doScenarioInput struct {
 	Verbose        bool
 	Metadata       map[string]interface{}
 	RunID          string
+	Cancelled      bool
+	cancelCtx      context.Context 
 	OnScenarioDone func(scenario, status string)
 }
 
@@ -196,6 +199,14 @@ func isAllowed(s *Scenario) bool {
 
 func doScenario(in *doScenarioInput) error {
 	for _, f := range in.ScenarioFiles {
+		if in.cancelCtx != nil {
+			select {
+			case <-in.cancelCtx.Done():
+				in.Cancelled = true
+			default:
+			}
+		}
+
 		yml, err := os.ReadFile(f)
 		if err != nil {
 			continue
@@ -342,7 +353,9 @@ func doScenario(in *doScenarioInput) error {
 		}
 
 		if in.ReportSlack != "" {
-			if len(s.errs) > 0 {
+			if in.Cancelled {
+				log.Printf("scenario %v completed mid-flight after cancel, skipping per-scenario Slack", filepath.Base(f))
+			} else if len(s.errs) > 0 {
 				// Send failure notification to slack
 				payload := SlackMessage{
 					Attachments: []SlackAttachment{
@@ -446,4 +459,55 @@ func doScenario(in *doScenarioInput) error {
 	}
 
 	return nil
+}
+
+// publishCancelledResult publishes a "cancelled" status to oopsdev-report for a
+// scenario that was skipped due to a PR close cancellation.
+func publishCancelledResult(app *appctx, scenarioFile string, in *doScenarioInput) {
+	if app == nil || app.rpub == nil || in.ReportPubsub == "" {
+		return
+	}
+
+	attr := make(map[string]string)
+	if pubsub != "" {
+		attr["pubsub"] = pubsub
+	}
+	if snssqs != "" {
+		attr["snssqs"] = snssqs
+	}
+	if in.Metadata != nil {
+		for _, key := range []string{
+			"pr_number", "branch", "commit_sha", "actor",
+			"trigger_type", "run_url", "repository", "workflow", "total_scenarios",
+		} {
+			if v, ok := in.Metadata[key].(string); ok && v != "" {
+				attr[key] = v
+			}
+		}
+		if ta, ok := in.Metadata["test_analysis"].(map[string]interface{}); ok {
+			for _, key := range []string{"missing_tests_in_pr", "should_run_tests"} {
+				if v, ok := ta[key].(bool); ok {
+					attr[key] = fmt.Sprintf("%v", v)
+				}
+			}
+		}
+		if b, err := json.Marshal(in.Metadata); err == nil {
+			attr["metadata"] = string(b)
+		}
+	}
+
+	r := ReportPubsub{
+		Scenario:  scenarioFile,
+		Attributes: attr,
+		Status:    "cancelled",
+		Data:      "skipped: PR was closed",
+		MessageID: uuid.NewString(),
+		RunID:     in.RunID,
+	}
+
+	if err := app.rpub.Publish(r.MessageID, r); err != nil {
+		log.Printf("publishCancelledResult: Publish failed for %v: %v", scenarioFile, err)
+	} else {
+		log.Printf("publishCancelledResult: scenario=%v run_id=%v", scenarioFile, in.RunID)
+	}
 }

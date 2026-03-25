@@ -88,6 +88,7 @@ type ScenarioProgressMessage struct {
 	Code             string   `json:"code"`
 	OverallStatus    string   `json:"overall_status,omitempty"`
 	FailedCount      int64    `json:"failed_count,omitempty"`
+	CancelledCount   int64    `json:"cancelled_count,omitempty"`
 	FailedScenarios  []string `json:"failed_scenarios,omitempty"`
 	CommitSHA        string   `json:"commit_sha,omitempty"`
 	Repository       string   `json:"repository,omitempty"`
@@ -388,6 +389,46 @@ type appctx struct {
 	rpub     *lspubsub.PubsubPublisher // topic to publish reports
 	mtx      *sync.Mutex
 	topicArn *string
+	activeRunsMu sync.RWMutex
+	activeRuns   map[string]context.CancelFunc
+}
+	// commit_sha is used as the key because it is the only identifier the PR close event
+    // registerRun registers a cancel function for the given commitSHA.
+func (a *appctx) registerRun(commitSHA string, cancel context.CancelFunc) {
+	if commitSHA == "" {
+		return
+	}
+	a.activeRunsMu.Lock()
+	defer a.activeRunsMu.Unlock()
+	if a.activeRuns == nil {
+		a.activeRuns = make(map[string]context.CancelFunc)
+	}
+	a.activeRuns[commitSHA] = cancel
+}
+
+// unregisterRun removes the cancel function for the given commitSHA.
+func (a *appctx) unregisterRun(commitSHA string) {
+	if commitSHA == "" {
+		return
+	}
+	a.activeRunsMu.Lock()
+	defer a.activeRunsMu.Unlock()
+	delete(a.activeRuns, commitSHA)
+}
+
+// cancelRun cancels an active run by commitSHA and returns true if the run was found.
+func (a *appctx) cancelRun(commitSHA string) bool {
+	if commitSHA == "" {
+		return false
+	}
+	a.activeRunsMu.RLock()
+	cancel, ok := a.activeRuns[commitSHA]
+	a.activeRunsMu.RUnlock()
+	if !ok {
+		return false
+	}
+	cancel()
+	return true
 }
 
 // Our message processing callback.
@@ -484,7 +525,15 @@ func process(ctx any, data []byte) error {
 		}
 	case "process":
 		log.Printf("process: %+v", c)
-		doScenario(&doScenarioInput{
+		runCtx, runCancel := context.WithCancel(context.Background())
+		defer runCancel()
+		commitSHA, _ := c.Metadata["commit_sha"].(string)
+		if commitSHA != "" {
+			app.registerRun(commitSHA, runCancel)
+			defer app.unregisterRun(commitSHA)
+		}
+
+		in := &doScenarioInput{
 			app:           app,
 			ScenarioFiles: []string{c.Scenario},
 			ReportSlack:   repslack,
@@ -492,7 +541,17 @@ func process(ctx any, data []byte) error {
 			Verbose:       verbose,
 			Metadata:      c.Metadata,
 			RunID:         c.ID,
-		})
+			cancelCtx:     runCtx,
+		}
+		select {
+		case <-runCtx.Done():
+			log.Printf("process: commit_sha=%s already cancelled, publishing cancelled result for %s", commitSHA, c.Scenario)
+			publishCancelledResult(app, c.Scenario, in)
+			return nil
+		default:
+		}
+
+		doScenario(in)
 	}
 
 	return nil
@@ -506,8 +565,70 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 	}
 
 	log.Printf("scenario progress: run_id=%s code=%s progress=%s", msg.RunID, msg.Code, msg.TotalScenarios)
+	var app *appctx
+	if ctx != nil {
+		app, _ = ctx.(*appctx)
+	}
 
 	switch msg.Code {
+	case "closed":
+		log.Printf("received closed event: commit_sha=%s repo=%s pr=%s run_id=%s",
+			msg.CommitSHA, msg.Repository, msg.PRNumber, msg.RunID)
+
+		if msg.CommitSHA == "" {
+			log.Printf("cancel: missing commit_sha, skipping")
+			return nil
+		}
+
+		cancelled := false
+		if app != nil {
+			cancelled = app.cancelRun(msg.CommitSHA)
+		}
+
+		if cancelled {
+			log.Printf("cancel: commit_sha=%s cancelled successfully", msg.CommitSHA)
+		} else {
+			log.Printf("cancel: commit_sha=%s not found in active runs (may have already finished)", msg.CommitSHA)
+		}
+
+		if msg.Repository != "" {
+			if err := postCommitStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.RunURL, "error", "PR closed — test run cancelled"); err != nil {
+				log.Printf("cancel: postCommitStatus failed: %v", err)
+			}
+		}
+
+		if repslack != "" {
+			env := "dev"
+			if strings.Contains(pubsub, "prod") {
+				env = "prod"
+			} else if strings.Contains(pubsub, "next") {
+				env = "next"
+			}
+
+			text := fmt.Sprintf("*Environment:* %s\n*Repository:* %s\n*PR:* #%s\n*Commit:* %s",
+				env, msg.Repository, msg.PRNumber, msg.CommitSHA)
+			if msg.RunURL != "" {
+				text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
+			}
+
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color:     "warning",
+						Title:     "Test Run Cancelled (PR Closed)",
+						Text:      text,
+						Footer:    fmt.Sprintf("oops • sha: %s", msg.CommitSHA),
+						Timestamp: time.Now().Unix(),
+						MrkdwnIn:  []string{"text"},
+					},
+				},
+			}
+
+			if err := payload.Notify(repslack); err != nil {
+				log.Printf("cancel: Notify (slack) failed: %v", err)
+			}
+		}
+
 	case "approve":
     log.Printf("received approve event: repo=%s sha=%s approvals=%d reviewers=%s",
         msg.Repository, msg.CommitSHA, msg.ApprovalCount, msg.Reviewers)
@@ -559,8 +680,12 @@ func handleScenarioCompletion(ctx any, data []byte) error {
     }
 
 	case "completed":
-		log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
-			msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
+		log.Printf("run completed: run_id=%s overall_status=%s failed=%d cancelled=%d repo=%s sha=%s",
+			msg.RunID, msg.OverallStatus, msg.FailedCount, msg.CancelledCount, msg.Repository, msg.CommitSHA)
+		if msg.CancelledCount > 0 {
+			log.Printf("completed: run_id=%s has %d cancelled scenario(s), skipping dispatch and notifications", msg.RunID, msg.CancelledCount)
+			return nil
+		}
 
 		if err := sendRepositoryDispatch(githubtoken, &msg); err != nil {
 			log.Printf("sendRepositoryDispatch failed: %v", err)
@@ -754,7 +879,7 @@ func run(ctx context.Context, done chan error) {
 
 		done1 := make(chan error, 1)
 		go func() {
-			ls := lspubsub.NewLengthySubscriber(nil, project, scenariopubsub, handleScenarioCompletion)
+			ls := lspubsub.NewLengthySubscriber(app, project, scenariopubsub, handleScenarioCompletion)
 			err := ls.Start(ctx0, done1)
 			if err != nil {
 				log.Fatalf("listener for scenario progress failed: %v", err)
