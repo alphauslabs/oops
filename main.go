@@ -392,9 +392,6 @@ type appctx struct {
 
 	activeRunsMu sync.RWMutex
 	activeRuns   map[string]context.CancelFunc
-
-	// FIX Gap 1: tombstone set for cancellations that arrive before process() registers the run.
-	// commit_sha is used as the key because it is the only identifier the PR close event carries.
 	pendingCancelsMu sync.RWMutex
 	pendingCancels   map[string]struct{}
 }
