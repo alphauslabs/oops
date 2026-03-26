@@ -353,6 +353,7 @@ func doScenario(in *doScenarioInput) error {
 
 		if in.ReportSlack != "" {
 			if len(s.errs) > 0 {
+				// Send failure notification to slack
 				payload := SlackMessage{
 					Attachments: []SlackAttachment{
 						{
@@ -370,6 +371,7 @@ func doScenario(in *doScenarioInput) error {
 					log.Printf("Notify (slack) failed: %v", err)
 				}
 			} else {
+				// Send success notification to slack
 				payload := SlackMessage{
 					Attachments: []SlackAttachment{
 						{
