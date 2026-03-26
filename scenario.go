@@ -351,6 +351,11 @@ func doScenario(in *doScenarioInput) error {
 			log.Printf("errs: %v", s.errs)
 		}
 
+		if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID) {
+			log.Printf("doScenario: run_id=%s was cancelled during execution of %s, skipping notifications", in.RunID, f)
+			return nil
+		}
+
 		if in.ReportSlack != "" {
 			if len(s.errs) > 0 {
 				// Send failure notification to slack
