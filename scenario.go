@@ -196,6 +196,11 @@ func isAllowed(s *Scenario) bool {
 
 func doScenario(in *doScenarioInput) error {
 	for _, f := range in.ScenarioFiles {
+		if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID) {
+			log.Printf("doScenario: run_id=%s is cancelled, stopping at %s", in.RunID, f)
+			return nil
+		}
+
 		yml, err := os.ReadFile(f)
 		if err != nil {
 			continue
@@ -232,6 +237,11 @@ func doScenario(in *doScenarioInput) error {
 		}
 
 		for i, run := range s.Run {
+			if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID) {
+				log.Printf("doScenario: run_id=%s cancelled mid-run at step %d of %s", in.RunID, i, f)
+				return nil
+			}
+
 			basef := filepath.Base(f)
 			prefix := filepath.Join(os.TempDir(), fmt.Sprintf("%v_run%d", basef, i))
 
