@@ -601,7 +601,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
         msg.Repository,
         msg.RunURL,
         "failure",
-        fmt.Sprintf("Test run cancelled — PR #%s was closed", msg.PRNumber),
+        fmt.Sprintf("Test run cancelled"),
     ); err != nil {
         log.Printf("postCommitStatus (cancelled) failed: %v", err)
     }
