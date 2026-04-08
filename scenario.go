@@ -172,6 +172,52 @@ type doScenarioInput struct {
 	OnScenarioDone func(scenario, status string)
 }
 
+func publishCancelledReport(in *doScenarioInput, scenarioFile string) {
+	if in.app == nil || in.app.rpub == nil || in.ReportPubsub == "" {
+		return
+	}
+
+	attr := make(map[string]string)
+	if pubsub != "" {
+		attr["pubsub"] = pubsub
+	}
+	if snssqs != "" {
+		attr["snssqs"] = snssqs
+	}
+	if in.Metadata != nil {
+		for _, key := range []string{
+			"pr_number", "branch", "commit_sha", "actor",
+			"trigger_type", "run_url", "repository", "workflow", "total_scenarios",
+		} {
+			if v, ok := in.Metadata[key].(string); ok && v != "" {
+				attr[key] = v
+			}
+		}
+		if ta, ok := in.Metadata["test_analysis"].(map[string]interface{}); ok {
+			for _, key := range []string{"missing_tests_in_pr", "should_run_tests"} {
+				if v, ok := ta[key].(bool); ok {
+					attr[key] = fmt.Sprintf("%v", v)
+				}
+			}
+		}
+	}
+
+	r := ReportPubsub{
+		Scenario:  scenarioFile,
+		Status:    "cancelled",
+		Data:      "",
+		MessageID: uuid.NewString(),
+		RunID:     in.RunID,
+		Attributes: attr,
+	}
+
+	if err := in.app.rpub.Publish(r.MessageID, r); err != nil {
+		log.Printf("publishCancelledReport: publish failed for %s: %v", scenarioFile, err)
+	} else {
+		log.Printf("publishCancelledReport: reported cancelled for run_id=%s scenario=%s", in.RunID, scenarioFile)
+	}
+}
+
 func isAllowed(s *Scenario) bool {
 	if len(tags) == 0 {
 		return true
@@ -197,8 +243,9 @@ func isAllowed(s *Scenario) bool {
 func doScenario(in *doScenarioInput) error {
 	for _, f := range in.ScenarioFiles {
 		if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID) {
-			log.Printf("doScenario: run_id=%s is cancelled, stopping at %s", in.RunID, f)
-			return nil
+			log.Printf("doScenario: run_id=%s is cancelled, reporting skip for %s", in.RunID, f)
+			publishCancelledReport(in, f)
+			continue
 		}
 
 		yml, err := os.ReadFile(f)
@@ -236,10 +283,12 @@ func doScenario(in *doScenarioInput) error {
 			}
 		}
 
+		cancelledMidRun := false
 		for i, run := range s.Run {
 			if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID) {
 				log.Printf("doScenario: run_id=%s cancelled mid-run at step %d of %s", in.RunID, i, f)
-				return nil
+				cancelledMidRun = true
+				break
 			}
 
 			basef := filepath.Base(f)
@@ -351,9 +400,10 @@ func doScenario(in *doScenarioInput) error {
 			log.Printf("errs: %v", s.errs)
 		}
 
-		if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID) {
-			log.Printf("doScenario: run_id=%s was cancelled during execution of %s, skipping notifications", in.RunID, f)
-			return nil
+		if cancelledMidRun || (in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID)) {
+			log.Printf("doScenario: run_id=%s was cancelled during execution of %s, reporting skip", in.RunID, f)
+			publishCancelledReport(in, f)
+			continue
 		}
 
 		if in.ReportSlack != "" {
