@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
@@ -53,6 +54,7 @@ var (
 	githubtoken    string
 	secretproject  string
 	secretname     string
+	spannerdb string 
 
 	verbose bool
 )
@@ -383,45 +385,37 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 	return true
 }
 
-type cancelledEntry struct {
-	expiresAt time.Time
-}
-
 type appctx struct {
 	pub           *lspubsub.PubsubPublisher // starter publisher topic
 	rpub          *lspubsub.PubsubPublisher // topic to publish reports
 	mtx           *sync.Mutex
 	topicArn      *string
-	cancelledMtx  sync.RWMutex
-	cancelledRuns map[string]cancelledEntry // run_ids that have been cancelled, with expiry
+	spannerClient *spanner.Client // Spanner client for cross-pod cancel lookup
 }
-
-const cancelledRunTTL = 10 * time.Minute
-
-func (a *appctx) cancelRun(runID string) {
-	a.cancelledMtx.Lock()
-	defer a.cancelledMtx.Unlock()
-	a.cancelledRuns[runID] = cancelledEntry{expiresAt: time.Now().Add(cancelledRunTTL)}
-	log.Printf("cancelRun: run_id=%s will expire at %s", runID, a.cancelledRuns[runID].expiresAt.Format(time.RFC3339))
-}
-
 func (a *appctx) isRunCancelled(runID string) bool {
 	if runID == "" {
 		return false
 	}
-	a.cancelledMtx.RLock()
-	entry, ok := a.cancelledRuns[runID]
-	a.cancelledMtx.RUnlock()
-	if !ok {
+
+	if a.spannerClient == nil {
 		return false
 	}
-	if time.Now().After(entry.expiresAt) {
-		a.cancelledMtx.Lock()
-		delete(a.cancelledRuns, runID)
-		a.cancelledMtx.Unlock()
-		return false
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	stmt := spanner.Statement{
+		SQL:    `SELECT run_id FROM oops_cancel WHERE run_id = @run_id LIMIT 1`,
+		Params: map[string]interface{}{"run_id": runID},
 	}
-	return true
+
+	found := false
+	_ = a.spannerClient.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
+		found = true
+		return nil
+	})
+
+	return found
 }
 
 // Our message processing callback.
@@ -518,10 +512,6 @@ func process(ctx any, data []byte) error {
 		}
 	case "process":
 		log.Printf("process: %+v", c)
-		if app.isRunCancelled(c.ID) {
-			log.Printf("process: run_id=%s is cancelled, skipping scenario %s", c.ID, c.Scenario)
-			return nil
-		}
 		doScenario(&doScenarioInput{
 			app:           app,
 			ScenarioFiles: []string{c.Scenario},
@@ -599,10 +589,6 @@ func handleScenarioCompletion(ctx any, data []byte) error {
     case "cancelled":
     log.Printf("run cancelled: run_id=%s repo=%s sha=%s pr=%s",
         msg.RunID, msg.Repository, msg.CommitSHA, msg.PRNumber)
-    if app, ok := ctx.(*appctx); ok && app != nil && msg.RunID != "" {
-        app.cancelRun(msg.RunID)
-        log.Printf("cancelled: run_id=%s marked as cancelled in-process, pending scenarios will be skipped", msg.RunID)
-    }
 
     if msg.CommitSHA == "" || msg.Repository == "" {
         log.Printf("cancelled: missing commit_sha or repository, skipping github status update")
@@ -738,8 +724,18 @@ func run(ctx context.Context, done chan error) {
 	}
 
 	app := &appctx{
-		mtx:           &sync.Mutex{},
-		cancelledRuns: make(map[string]cancelledEntry),
+		mtx: &sync.Mutex{},
+	}
+
+	if spannerdb != "" {
+		sc, err := spanner.NewClient(ctx, spannerdb)
+		if err != nil {
+			log.Printf("WARNING: spanner.NewClient failed, cancel checks will be skipped: %v", err)
+		} else {
+			app.spannerClient = sc
+			defer sc.Close()
+			log.Printf("spanner client initialised: %s", spannerdb)
+		}
 	}
 	ctx0, cancelCtx0 := context.WithCancel(ctx)
 	defer cancelCtx0()
@@ -878,6 +874,7 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringVar(&snssqs, "snssqs", snssqs, "name of the SNS topic and SQS queue")
 	cmd.Flags().StringVar(&pubsub, "pubsub", pubsub, "name of the GCP pubsub and subscription")
 	cmd.Flags().StringVar(&scenariopubsub, "scenario-pubsub", os.Getenv("SCENARIO_PUBSUB"), "pubsub subscription for scenario progress (e.g. oopsdev-scenarios)")
+	cmd.Flags().StringVar(&spannerdb, "spanner-db", os.Getenv("SPANNER_DB"), "Spanner DB path for cancel checks")
 	return cmd
 }
 
