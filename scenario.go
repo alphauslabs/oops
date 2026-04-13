@@ -241,8 +241,9 @@ func isAllowed(s *Scenario) bool {
 }
 
 func doScenario(in *doScenarioInput) error {
+	commitSha, _ := in.Metadata["commit_sha"].(string)
 	for _, f := range in.ScenarioFiles {
-		if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID) {
+		if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID, commitSha) {
 			log.Printf("doScenario: run_id=%s is cancelled, reporting skip for %s", in.RunID, f)
 			publishCancelledReport(in, f)
 			continue
@@ -285,7 +286,7 @@ func doScenario(in *doScenarioInput) error {
 
 		cancelledMidRun := false
 		for i, run := range s.Run {
-			if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID) {
+			if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID, commitSha) {
 				log.Printf("doScenario: run_id=%s cancelled mid-run at step %d of %s", in.RunID, i, f)
 				cancelledMidRun = true
 				break
@@ -400,7 +401,7 @@ func doScenario(in *doScenarioInput) error {
 			log.Printf("errs: %v", s.errs)
 		}
 
-		if cancelledMidRun || (in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID)) {
+		if cancelledMidRun || (in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID, commitSha)) {
 			log.Printf("doScenario: run_id=%s was cancelled during execution of %s, reporting skip", in.RunID, f)
 			publishCancelledReport(in, f)
 			continue

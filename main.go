@@ -392,8 +392,8 @@ type appctx struct {
 	topicArn      *string
 	spannerClient *spanner.Client // Spanner client for cross-pod cancel lookup
 }
-func (a *appctx) isRunCancelled(runID string) bool {
-	if runID == "" {
+func (a *appctx) isRunCancelled(runID string, commitSha string) bool {
+	if runID == "" && commitSha == "" {
 		return false
 	}
 
@@ -405,8 +405,13 @@ func (a *appctx) isRunCancelled(runID string) bool {
 	defer cancel()
 
 	stmt := spanner.Statement{
-		SQL:    `SELECT run_id FROM oops_cancel WHERE run_id = @run_id LIMIT 1`,
-		Params: map[string]interface{}{"run_id": runID},
+		SQL: `SELECT run_id FROM oops_cancel 
+		      WHERE run_id = @run_id OR commit_sha = @commit_sha 
+		      LIMIT 1`,
+		Params: map[string]interface{}{
+			"run_id":     runID,
+			"commit_sha": commitSha,
+		},
 	}
 
 	found := false
@@ -434,6 +439,50 @@ func process(ctx any, data []byte) error {
 	switch c.Code {
 	case "start":
 		log.Printf("received start command with tags: %v", c.Tags)
+		commitSha, _ := c.Metadata["commit_sha"].(string)
+		repository, _ := c.Metadata["repository"].(string)
+		prNumber, _ := c.Metadata["pr_number"].(string)
+		runURL, _ := c.Metadata["run_url"].(string)
+
+		if app.isRunCancelled(c.ID, commitSha) {
+			log.Printf("start: run cancelled for run_id=%s commit_sha=%s — skipping distribution", c.ID, commitSha)
+
+			if commitSha != "" && repository != "" {
+				if err := postCommitStatus(
+					githubtoken,
+					commitSha,
+					repository,
+					runURL,
+					"failure",
+					fmt.Sprintf("Test run cancelled"),
+				); err != nil {
+					log.Printf("postCommitStatus (cancelled) failed: %v", err)
+				}
+			}
+
+			if repslack != "" {
+				payload := SlackMessage{
+					Attachments: []SlackAttachment{
+						{
+							Color: "warning",
+							Title: "Test Run Cancelled",
+							Text: fmt.Sprintf("*PR #%s* in `%s` was closed.\nIn-progress test run `%s` has been cancelled.\n<%s|View workflow>",
+								prNumber, repository, c.ID, runURL),
+							Footer:    fmt.Sprintf("oops • pr: %s • sha: %.7s", prNumber, commitSha),
+							Timestamp: time.Now().Unix(),
+							MrkdwnIn:  []string{"text"},
+						},
+					},
+				}
+
+				if err := payload.Notify(repslack); err != nil {
+					log.Printf("Notify (slack) cancelled failed: %v", err)
+				}
+			}
+
+			break
+		}
+
 		var distributed bool
 		var dist string
 		switch {
