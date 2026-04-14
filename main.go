@@ -406,8 +406,9 @@ func (a *appctx) isRunCancelled(runID string, commitSha string) bool {
 
 	stmt := spanner.Statement{
 		SQL: `SELECT run_id FROM oops_cancel 
-		      WHERE run_id = @run_id OR commit_sha = @commit_sha 
-		      LIMIT 1`,
+			WHERE (run_id = @run_id OR commit_sha = @commit_sha)
+				AND status = 'closed'
+			LIMIT 1`,
 		Params: map[string]interface{}{
 			"run_id":     runID,
 			"commit_sha": commitSha,
@@ -419,6 +420,9 @@ func (a *appctx) isRunCancelled(runID string, commitSha string) bool {
 		found = true
 		return nil
 	})
+	if found {
+		return true
+	}
 
 	return found
 }
