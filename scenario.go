@@ -103,6 +103,11 @@ func (s *Scenario) RunScript(file string) ([]byte, error) {
 		}
 	}
 
+	pr_number, _ := s.input.Metadata["pr_number"].(string)
+	if pr_number != "" {
+		c.Env = append(c.Env, fmt.Sprintf("PR_NUMBER=%v", pr_number))
+	}
+
 	return c.CombinedOutput()
 }
 
@@ -203,11 +208,11 @@ func publishCancelledReport(in *doScenarioInput, scenarioFile string) {
 	}
 
 	r := ReportPubsub{
-		Scenario:  scenarioFile,
-		Status:    "cancelled",
-		Data:      "",
-		MessageID: uuid.NewString(),
-		RunID:     in.RunID,
+		Scenario:   scenarioFile,
+		Status:     "cancelled",
+		Data:       "",
+		MessageID:  uuid.NewString(),
+		RunID:      in.RunID,
 		Attributes: attr,
 	}
 
