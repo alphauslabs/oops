@@ -54,7 +54,8 @@ var (
 	githubtoken    string
 	secretproject  string
 	secretname     string
-	spannerdb string 
+	spannerdb      string
+	spannercanceltable  string
 
 	verbose bool
 )
@@ -405,10 +406,10 @@ func (a *appctx) isRunCancelled(runID string, commitSha string) bool {
 	defer cancel()
 
 	stmt := spanner.Statement{
-		SQL: `SELECT run_id FROM oops_cancel 
+		SQL: fmt.Sprintf(`SELECT run_id FROM %s 
 			WHERE (run_id = @run_id OR commit_sha = @commit_sha)
 				AND status = 'closed'
-			LIMIT 1`,
+			LIMIT 1`, spannercanceltable),
 		Params: map[string]interface{}{
 			"run_id":     runID,
 			"commit_sha": commitSha,
@@ -926,8 +927,9 @@ func runCmd() *cobra.Command {
 	cmd.Flags().SortFlags = false
 	cmd.Flags().StringVar(&snssqs, "snssqs", snssqs, "name of the SNS topic and SQS queue")
 	cmd.Flags().StringVar(&pubsub, "pubsub", pubsub, "name of the GCP pubsub and subscription")
-	cmd.Flags().StringVar(&scenariopubsub, "scenario-pubsub", os.Getenv("SCENARIO_PUBSUB"), "pubsub subscription for scenario progress (e.g. oopsdev-scenarios)")
+	cmd.Flags().StringVar(&scenariopubsub, "scenario-pubsub", os.Getenv("SCENARIO_PUBSUB"), "pubsub subscription for scenario progress (e.g. oopsnext-scenarios)")
 	cmd.Flags().StringVar(&spannerdb, "spanner-db", os.Getenv("SPANNER_DB"), "Spanner DB path for cancel checks")
+	cmd.Flags().StringVar(&spannercanceltable, "spanner-cancel-table", os.Getenv("SPANNER_CANCEL_TABLE"), "Spanner table name for cancel checks")
 	return cmd
 }
 
