@@ -50,12 +50,12 @@ var (
 	repslack  string
 	reppubsub string
 
-	scenariopubsub string
-	githubtoken    string
-	secretproject  string
-	secretname     string
-	spannerdb      string
-	spannercanceltable  string
+	scenariopubsub     string
+	githubtoken        string
+	secretproject      string
+	secretname         string
+	spannerdb          string
+	spannercanceltable string
 
 	verbose bool
 )
@@ -140,37 +140,18 @@ func combineFilesAndDir() []string {
 }
 
 func findScenarioFiles(root string) []string {
-	patterns := []string{
-		filepath.Join(root, "services", "*", "scenarios"),
-		filepath.Join(root, "cloudrun", "*", "scenarios"),
-		filepath.Join(root, "cronjobs", "*", "scenarios"),
-		filepath.Join(root, "serverless", "*", "scenarios"),
-		filepath.Join(root, "microapps", "*", "scenarios"),
-		filepath.Join(root, "cmd", "*", "scenarios"),
-		filepath.Join(root, "pkg", "*", "scenarios"),
-	}
-
 	var out []string
-	for _, p := range patterns {
-		dirs, err := filepath.Glob(p)
+	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Printf("glob %v: %v", p, err)
-			continue
+			return err
 		}
-		for _, d := range dirs {
-			filepath.Walk(d, func(path string, info os.FileInfo, err error) error {
-				if err != nil {
-					return err
-				}
-				if !info.IsDir() && strings.HasSuffix(path, ".yaml") {
-					abs, _ := filepath.Abs(path)
-					log.Printf("input: %v", abs)
-					out = append(out, abs)
-				}
-				return nil
-			})
+		if !info.IsDir() && strings.HasSuffix(path, ".yaml") && strings.Contains(path, "/scenarios/") {
+			abs, _ := filepath.Abs(path)
+			log.Printf("input: %v", abs)
+			out = append(out, abs)
 		}
-	}
+		return nil
+	})
 	return out
 }
 
@@ -393,6 +374,7 @@ type appctx struct {
 	topicArn      *string
 	spannerClient *spanner.Client // Spanner client for cross-pod cancel lookup
 }
+
 func (a *appctx) isRunCancelled(runID string, commitSha string) bool {
 	if runID == "" && commitSha == "" {
 		return false
@@ -591,95 +573,95 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 
 	switch msg.Code {
 	case "approve":
-    log.Printf("received approve event: repo=%s sha=%s approvals=%d reviewers=%s",
-        msg.Repository, msg.CommitSHA, msg.ApprovalCount, msg.Reviewers)
+		log.Printf("received approve event: repo=%s sha=%s approvals=%d reviewers=%s",
+			msg.Repository, msg.CommitSHA, msg.ApprovalCount, msg.Reviewers)
 
-    if msg.CommitSHA == "" || msg.Repository == "" {
-        log.Printf("approve: missing commit_sha or repository, skipping")
-        return nil
-    }
+		if msg.CommitSHA == "" || msg.Repository == "" {
+			log.Printf("approve: missing commit_sha or repository, skipping")
+			return nil
+		}
 
-    if err := sendApprovalStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.PRNumber, msg.RunURL, msg.ApprovalCount, msg.Reviewers); err != nil {
-        log.Printf("sendApprovalStatus failed: %v", err)
-    }
+		if err := sendApprovalStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.PRNumber, msg.RunURL, msg.ApprovalCount, msg.Reviewers); err != nil {
+			log.Printf("sendApprovalStatus failed: %v", err)
+		}
 
-    if repslack != "" {
-        reviewerMentions := ""
-        if msg.Reviewers != "" {
-            var mentions []string
-            for _, r := range strings.Split(msg.Reviewers, ",") {
-                mentions = append(mentions, "@"+strings.TrimSpace(r))
-            }
-            reviewerMentions = strings.Join(mentions, " ")
-        }
+		if repslack != "" {
+			reviewerMentions := ""
+			if msg.Reviewers != "" {
+				var mentions []string
+				for _, r := range strings.Split(msg.Reviewers, ",") {
+					mentions = append(mentions, "@"+strings.TrimSpace(r))
+				}
+				reviewerMentions = strings.Join(mentions, " ")
+			}
 
-        color := "good"
-        title := "PR Approved"
-        text := fmt.Sprintf("*Repository:* %s\n*PR:* #%s\n*Reviewers:* %s\n*Approval Count:* %d",
-            msg.Repository, msg.PRNumber, reviewerMentions, msg.ApprovalCount)
+			color := "good"
+			title := "PR Approved"
+			text := fmt.Sprintf("*Repository:* %s\n*PR:* #%s\n*Reviewers:* %s\n*Approval Count:* %d",
+				msg.Repository, msg.PRNumber, reviewerMentions, msg.ApprovalCount)
 
-        if msg.RunURL != "" {
-            text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
-        }
+			if msg.RunURL != "" {
+				text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
+			}
 
-        payload := SlackMessage{
-            Attachments: []SlackAttachment{
-                {
-                    Color:     color,
-                    Title:     title,
-                    Text:      text,
-                    Footer:    "oops • approval",
-                    Timestamp: time.Now().Unix(),
-                    MrkdwnIn:  []string{"text"},
-                },
-            },
-        }
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color:     color,
+						Title:     title,
+						Text:      text,
+						Footer:    "oops • approval",
+						Timestamp: time.Now().Unix(),
+						MrkdwnIn:  []string{"text"},
+					},
+				},
+			}
 
-        if err := payload.Notify(repslack); err != nil {
-            log.Printf("Notify (slack) failed: %v", err)
-        }
-    }
+			if err := payload.Notify(repslack); err != nil {
+				log.Printf("Notify (slack) failed: %v", err)
+			}
+		}
 
-    case "cancelled":
-    log.Printf("run cancelled: run_id=%s repo=%s sha=%s pr=%s",
-        msg.RunID, msg.Repository, msg.CommitSHA, msg.PRNumber)
+	case "cancelled":
+		log.Printf("run cancelled: run_id=%s repo=%s sha=%s pr=%s",
+			msg.RunID, msg.Repository, msg.CommitSHA, msg.PRNumber)
 
-    if msg.CommitSHA == "" || msg.Repository == "" {
-        log.Printf("cancelled: missing commit_sha or repository, skipping github status update")
-        return nil
-    }
+		if msg.CommitSHA == "" || msg.Repository == "" {
+			log.Printf("cancelled: missing commit_sha or repository, skipping github status update")
+			return nil
+		}
 
-    if err := postCommitStatus(
-        githubtoken,
-        msg.CommitSHA,
-        msg.Repository,
-        msg.RunURL,
-        "failure",
-        fmt.Sprintf("Test run cancelled"),
-    ); err != nil {
-        log.Printf("postCommitStatus (cancelled) failed: %v", err)
-    }
-    if repslack != "" {
-        payload := SlackMessage{
-            Attachments: []SlackAttachment{
-                {
-                    Color: "warning",
-                    Title: "Test Run Cancelled",
-                    Text: fmt.Sprintf("*PR #%s* in `%s` was closed.\nIn-progress test run `%s` has been cancelled.\n<%s|View workflow>",
-                        msg.PRNumber, msg.Repository, msg.RunID, msg.RunURL),
-                    Footer:    fmt.Sprintf("oops • pr: %s • sha: %.7s", msg.PRNumber, msg.CommitSHA),
-                    Timestamp: time.Now().Unix(),
-                    MrkdwnIn:  []string{"text"},
-                },
-            },
-        }
+		if err := postCommitStatus(
+			githubtoken,
+			msg.CommitSHA,
+			msg.Repository,
+			msg.RunURL,
+			"failure",
+			fmt.Sprintf("Test run cancelled"),
+		); err != nil {
+			log.Printf("postCommitStatus (cancelled) failed: %v", err)
+		}
+		if repslack != "" {
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color: "warning",
+						Title: "Test Run Cancelled",
+						Text: fmt.Sprintf("*PR #%s* in `%s` was closed.\nIn-progress test run `%s` has been cancelled.\n<%s|View workflow>",
+							msg.PRNumber, msg.Repository, msg.RunID, msg.RunURL),
+						Footer:    fmt.Sprintf("oops • pr: %s • sha: %.7s", msg.PRNumber, msg.CommitSHA),
+						Timestamp: time.Now().Unix(),
+						MrkdwnIn:  []string{"text"},
+					},
+				},
+			}
 
-        if err := payload.Notify(repslack); err != nil {
-            log.Printf("Notify (slack) cancelled failed: %v", err)
-        }
-    }
+			if err := payload.Notify(repslack); err != nil {
+				log.Printf("Notify (slack) cancelled failed: %v", err)
+			}
+		}
 
-    case "completed":
+	case "completed":
 		log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
 			msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
 
