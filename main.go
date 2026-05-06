@@ -469,17 +469,13 @@ func process(ctx any, data []byte) error {
 		}
 
 		var hookResult struct {
-			ScenarioPath string `json:"scenario_path"`
-			OverlayDir   string `json:"overlay_dir"`
+			OverlayDir string `json:"overlay_dir"`
 		}
 		if err := json.Unmarshal(hookOutput, &hookResult); err != nil {
 			log.Printf("pre-process hook: invalid output for scenario %v: %v", c.Scenario, err)
 			return err
 		}
 
-		if hookResult.ScenarioPath != "" {
-			c.Scenario = hookResult.ScenarioPath
-		}
 		if hookResult.OverlayDir != "" {
 			c.Metadata["overlay_dir"] = hookResult.OverlayDir
 		}
