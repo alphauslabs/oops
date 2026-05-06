@@ -367,6 +367,13 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 		log.Printf("service filter: %d/%d scenarios kept", len(final), before)
 	}
 
+	// If hook returned an overlay_dir, scan it and drop baked-in files
+	// that have an overlay counterpart at the same relative path.
+	overlayDir := metadata["overlay_dir"].(string)
+	if overlayDir != "" {
+		final = dedupeWithOverlay(overlayDir, final)
+	}
+
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
 	metadata["total_scenarios"] = fmt.Sprintf("%d", len(filtered))
