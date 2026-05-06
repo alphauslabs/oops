@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -56,6 +57,7 @@ var (
 	secretname         string
 	spannerdb          string
 	spannercanceltable string
+	preprocesshook     string
 
 	verbose bool
 )
@@ -185,6 +187,26 @@ func filterScenariosByTags(files []string, tagFilters []string) []string {
 	return filtered
 }
 
+func dedupeWithOverlay(overlayDir string, scenarios []string) []string {
+	var out []string
+	overlayFiles := findScenarioFiles(overlayDir)
+	overridden := make(map[string]bool)
+	for _, f := range overlayFiles {
+		if rel, err := filepath.Rel(overlayDir, f); err == nil {
+			overridden[rel] = true
+		}
+	}
+	var deduped []string
+	for _, f := range scenarios {
+		if rel, err := filepath.Rel(dir, f); err == nil && overridden[rel] {
+			continue // baked-in has an overlay counterpart, skip it
+		}
+		deduped = append(deduped, f)
+	}
+	out = append(deduped, overlayFiles...)
+	return out
+}
+
 func isAllowedWithTags(s *Scenario, tagFilters []string) bool {
 	if len(tagFilters) == 0 {
 		return true
@@ -282,6 +304,13 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 		before := len(final)
 		final = filterScenariosByAffectedServices(final, affectedServices)
 		log.Printf("service filter: %d/%d scenarios kept", len(final), before)
+	}
+
+	// If hook returned an overlay_dir, scan it and drop baked-in files
+	// that have an overlay counterpart at the same relative path.
+	overlayDir := metadata["overlay_dir"].(string)
+	if overlayDir != "" {
+		final = dedupeWithOverlay(overlayDir, final)
 	}
 
 	filtered := filterScenariosByTags(final, tagFilters)
@@ -421,6 +450,32 @@ func process(ctx any, data []byte) error {
 	if err != nil {
 		log.Printf("Unmarshal failed: %v", err)
 		return err
+	}
+
+	if preprocesshook != "" {
+		log.Printf("Running pre-process hook %v for scenario %v", preprocesshook, c.Scenario)
+		hookInput, _ := json.Marshal(c)
+		hookOutput, err := exec.Command(preprocesshook, string(hookInput)).Output()
+		if err != nil {
+			log.Printf("pre-process hook failed for scenario %v: %v", c.Scenario, err)
+			return err
+		}
+
+		var hookResult struct {
+			ScenarioPath string `json:"scenario_path"`
+			OverlayDir   string `json:"overlay_dir"`
+		}
+		if err := json.Unmarshal(hookOutput, &hookResult); err != nil {
+			log.Printf("pre-process hook: invalid output for scenario %v: %v", c.Scenario, err)
+			return err
+		}
+
+		if hookResult.ScenarioPath != "" {
+			c.Scenario = hookResult.ScenarioPath
+		}
+		if hookResult.OverlayDir != "" {
+			c.Metadata["overlay_dir"] = hookResult.OverlayDir
+		}
 	}
 
 	switch c.Code {
@@ -932,6 +987,7 @@ func init() {
 	rootcmd.PersistentFlags().StringSliceVarP(&files, "scenarios", "s", files, "scenario file[s] to run, comma-separated, or multiple -s")
 	rootcmd.PersistentFlags().StringSliceVarP(&tags, "tags", "t", tags, "key=value labels in scenario files that are allowed to run, empty means all")
 	rootcmd.PersistentFlags().StringVar(&githubtoken, "github-token", "", "GitHub token for commit status updates")
+	rootcmd.PersistentFlags().StringVar(&preprocesshook, "pre-process-hook", preprocesshook, "executable to run before processing each scenario, with the scenario file path as argument")
 	rootcmd.AddCommand(runCmd())
 }
 
