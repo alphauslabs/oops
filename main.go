@@ -308,7 +308,7 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 
 	// If hook returned an overlay_dir, scan it and drop baked-in files
 	// that have an overlay counterpart at the same relative path.
-	overlayDir := metadata["overlay_dir"].(string)
+	overlayDir, _ := metadata["overlay_dir"].(string)
 	if overlayDir != "" {
 		final = dedupeWithOverlay(overlayDir, final)
 	}
@@ -369,7 +369,7 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 
 	// If hook returned an overlay_dir, scan it and drop baked-in files
 	// that have an overlay counterpart at the same relative path.
-	overlayDir := metadata["overlay_dir"].(string)
+	overlayDir, _ := metadata["overlay_dir"].(string)
 	if overlayDir != "" {
 		final = dedupeWithOverlay(overlayDir, final)
 	}
