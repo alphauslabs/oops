@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -50,12 +51,13 @@ var (
 	repslack  string
 	reppubsub string
 
-	scenariopubsub string
-	githubtoken    string
-	secretproject  string
-	secretname     string
-	spannerdb      string
-	spannercanceltable  string
+	scenariopubsub     string
+	githubtoken        string
+	secretproject      string
+	secretname         string
+	spannerdb          string
+	spannercanceltable string
+	preprocesshook     string
 
 	verbose bool
 )
@@ -140,37 +142,18 @@ func combineFilesAndDir() []string {
 }
 
 func findScenarioFiles(root string) []string {
-	patterns := []string{
-		filepath.Join(root, "services", "*", "scenarios"),
-		filepath.Join(root, "cloudrun", "*", "scenarios"),
-		filepath.Join(root, "cronjobs", "*", "scenarios"),
-		filepath.Join(root, "serverless", "*", "scenarios"),
-		filepath.Join(root, "microapps", "*", "scenarios"),
-		filepath.Join(root, "cmd", "*", "scenarios"),
-		filepath.Join(root, "pkg", "*", "scenarios"),
-	}
-
 	var out []string
-	for _, p := range patterns {
-		dirs, err := filepath.Glob(p)
+	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Printf("glob %v: %v", p, err)
-			continue
+			return err
 		}
-		for _, d := range dirs {
-			filepath.Walk(d, func(path string, info os.FileInfo, err error) error {
-				if err != nil {
-					return err
-				}
-				if !info.IsDir() && strings.HasSuffix(path, ".yaml") {
-					abs, _ := filepath.Abs(path)
-					log.Printf("input: %v", abs)
-					out = append(out, abs)
-				}
-				return nil
-			})
+		if !info.IsDir() && strings.HasSuffix(path, ".yaml") && strings.Contains(path, "/scenarios/") {
+			abs, _ := filepath.Abs(path)
+			log.Printf("input: %v", abs)
+			out = append(out, abs)
 		}
-	}
+		return nil
+	})
 	return out
 }
 
@@ -202,6 +185,26 @@ func filterScenariosByTags(files []string, tagFilters []string) []string {
 	}
 
 	return filtered
+}
+
+func dedupeWithOverlay(overlayDir string, scenarios []string) []string {
+	var out []string
+	overlayFiles := findScenarioFiles(overlayDir)
+	overridden := make(map[string]bool)
+	for _, f := range overlayFiles {
+		if rel, err := filepath.Rel(overlayDir, f); err == nil {
+			overridden[rel] = true
+		}
+	}
+	var deduped []string
+	for _, f := range scenarios {
+		if rel, err := filepath.Rel(dir, f); err == nil && overridden[rel] {
+			continue // baked-in has an overlay counterpart, skip it
+		}
+		deduped = append(deduped, f)
+	}
+	out = append(deduped, overlayFiles...)
+	return out
 }
 
 func isAllowedWithTags(s *Scenario, tagFilters []string) bool {
@@ -303,6 +306,13 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 		log.Printf("service filter: %d/%d scenarios kept", len(final), before)
 	}
 
+	// If hook returned an overlay_dir, scan it and drop baked-in files
+	// that have an overlay counterpart at the same relative path.
+	overlayDir := metadata["overlay_dir"].(string)
+	if overlayDir != "" {
+		final = dedupeWithOverlay(overlayDir, final)
+	}
+
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
 
@@ -357,6 +367,13 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 		log.Printf("service filter: %d/%d scenarios kept", len(final), before)
 	}
 
+	// If hook returned an overlay_dir, scan it and drop baked-in files
+	// that have an overlay counterpart at the same relative path.
+	overlayDir := metadata["overlay_dir"].(string)
+	if overlayDir != "" {
+		final = dedupeWithOverlay(overlayDir, final)
+	}
+
 	filtered := filterScenariosByTags(final, tagFilters)
 	log.Printf("distributing %d/%d scenarios matching tags %v", len(filtered), len(final), tagFilters)
 	metadata["total_scenarios"] = fmt.Sprintf("%d", len(filtered))
@@ -393,6 +410,7 @@ type appctx struct {
 	topicArn      *string
 	spannerClient *spanner.Client // Spanner client for cross-pod cancel lookup
 }
+
 func (a *appctx) isRunCancelled(runID string, commitSha string) bool {
 	if runID == "" && commitSha == "" {
 		return false
@@ -439,6 +457,28 @@ func process(ctx any, data []byte) error {
 	if err != nil {
 		log.Printf("Unmarshal failed: %v", err)
 		return err
+	}
+
+	if preprocesshook != "" {
+		log.Printf("Running pre-process hook %v for scenario %v", preprocesshook, c.Scenario)
+		hookInput, _ := json.Marshal(c)
+		hookOutput, err := exec.Command(preprocesshook, string(hookInput)).Output()
+		if err != nil {
+			log.Printf("pre-process hook failed for scenario %v: %v", c.Scenario, err)
+			return err
+		}
+
+		var hookResult struct {
+			OverlayDir string `json:"overlay_dir"`
+		}
+		if err := json.Unmarshal(hookOutput, &hookResult); err != nil {
+			log.Printf("pre-process hook: invalid output for scenario %v: %v", c.Scenario, err)
+			return err
+		}
+
+		if hookResult.OverlayDir != "" {
+			c.Metadata["overlay_dir"] = hookResult.OverlayDir
+		}
 	}
 
 	switch c.Code {
@@ -591,95 +631,95 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 
 	switch msg.Code {
 	case "approve":
-    log.Printf("received approve event: repo=%s sha=%s approvals=%d reviewers=%s",
-        msg.Repository, msg.CommitSHA, msg.ApprovalCount, msg.Reviewers)
+		log.Printf("received approve event: repo=%s sha=%s approvals=%d reviewers=%s",
+			msg.Repository, msg.CommitSHA, msg.ApprovalCount, msg.Reviewers)
 
-    if msg.CommitSHA == "" || msg.Repository == "" {
-        log.Printf("approve: missing commit_sha or repository, skipping")
-        return nil
-    }
+		if msg.CommitSHA == "" || msg.Repository == "" {
+			log.Printf("approve: missing commit_sha or repository, skipping")
+			return nil
+		}
 
-    if err := sendApprovalStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.PRNumber, msg.RunURL, msg.ApprovalCount, msg.Reviewers); err != nil {
-        log.Printf("sendApprovalStatus failed: %v", err)
-    }
+		if err := sendApprovalStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.PRNumber, msg.RunURL, msg.ApprovalCount, msg.Reviewers); err != nil {
+			log.Printf("sendApprovalStatus failed: %v", err)
+		}
 
-    if repslack != "" {
-        reviewerMentions := ""
-        if msg.Reviewers != "" {
-            var mentions []string
-            for _, r := range strings.Split(msg.Reviewers, ",") {
-                mentions = append(mentions, "@"+strings.TrimSpace(r))
-            }
-            reviewerMentions = strings.Join(mentions, " ")
-        }
+		if repslack != "" {
+			reviewerMentions := ""
+			if msg.Reviewers != "" {
+				var mentions []string
+				for _, r := range strings.Split(msg.Reviewers, ",") {
+					mentions = append(mentions, "@"+strings.TrimSpace(r))
+				}
+				reviewerMentions = strings.Join(mentions, " ")
+			}
 
-        color := "good"
-        title := "PR Approved"
-        text := fmt.Sprintf("*Repository:* %s\n*PR:* #%s\n*Reviewers:* %s\n*Approval Count:* %d",
-            msg.Repository, msg.PRNumber, reviewerMentions, msg.ApprovalCount)
+			color := "good"
+			title := "PR Approved"
+			text := fmt.Sprintf("*Repository:* %s\n*PR:* #%s\n*Reviewers:* %s\n*Approval Count:* %d",
+				msg.Repository, msg.PRNumber, reviewerMentions, msg.ApprovalCount)
 
-        if msg.RunURL != "" {
-            text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
-        }
+			if msg.RunURL != "" {
+				text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
+			}
 
-        payload := SlackMessage{
-            Attachments: []SlackAttachment{
-                {
-                    Color:     color,
-                    Title:     title,
-                    Text:      text,
-                    Footer:    "oops • approval",
-                    Timestamp: time.Now().Unix(),
-                    MrkdwnIn:  []string{"text"},
-                },
-            },
-        }
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color:     color,
+						Title:     title,
+						Text:      text,
+						Footer:    "oops • approval",
+						Timestamp: time.Now().Unix(),
+						MrkdwnIn:  []string{"text"},
+					},
+				},
+			}
 
-        if err := payload.Notify(repslack); err != nil {
-            log.Printf("Notify (slack) failed: %v", err)
-        }
-    }
+			if err := payload.Notify(repslack); err != nil {
+				log.Printf("Notify (slack) failed: %v", err)
+			}
+		}
 
-    case "cancelled":
-    log.Printf("run cancelled: run_id=%s repo=%s sha=%s pr=%s",
-        msg.RunID, msg.Repository, msg.CommitSHA, msg.PRNumber)
+	case "cancelled":
+		log.Printf("run cancelled: run_id=%s repo=%s sha=%s pr=%s",
+			msg.RunID, msg.Repository, msg.CommitSHA, msg.PRNumber)
 
-    if msg.CommitSHA == "" || msg.Repository == "" {
-        log.Printf("cancelled: missing commit_sha or repository, skipping github status update")
-        return nil
-    }
+		if msg.CommitSHA == "" || msg.Repository == "" {
+			log.Printf("cancelled: missing commit_sha or repository, skipping github status update")
+			return nil
+		}
 
-    if err := postCommitStatus(
-        githubtoken,
-        msg.CommitSHA,
-        msg.Repository,
-        msg.RunURL,
-        "failure",
-        fmt.Sprintf("Test run cancelled"),
-    ); err != nil {
-        log.Printf("postCommitStatus (cancelled) failed: %v", err)
-    }
-    if repslack != "" {
-        payload := SlackMessage{
-            Attachments: []SlackAttachment{
-                {
-                    Color: "warning",
-                    Title: "Test Run Cancelled",
-                    Text: fmt.Sprintf("*PR #%s* in `%s` was closed.\nIn-progress test run `%s` has been cancelled.\n<%s|View workflow>",
-                        msg.PRNumber, msg.Repository, msg.RunID, msg.RunURL),
-                    Footer:    fmt.Sprintf("oops • pr: %s • sha: %.7s", msg.PRNumber, msg.CommitSHA),
-                    Timestamp: time.Now().Unix(),
-                    MrkdwnIn:  []string{"text"},
-                },
-            },
-        }
+		if err := postCommitStatus(
+			githubtoken,
+			msg.CommitSHA,
+			msg.Repository,
+			msg.RunURL,
+			"failure",
+			fmt.Sprintf("Test run cancelled"),
+		); err != nil {
+			log.Printf("postCommitStatus (cancelled) failed: %v", err)
+		}
+		if repslack != "" {
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color: "warning",
+						Title: "Test Run Cancelled",
+						Text: fmt.Sprintf("*PR #%s* in `%s` was closed.\nIn-progress test run `%s` has been cancelled.\n<%s|View workflow>",
+							msg.PRNumber, msg.Repository, msg.RunID, msg.RunURL),
+						Footer:    fmt.Sprintf("oops • pr: %s • sha: %.7s", msg.PRNumber, msg.CommitSHA),
+						Timestamp: time.Now().Unix(),
+						MrkdwnIn:  []string{"text"},
+					},
+				},
+			}
 
-        if err := payload.Notify(repslack); err != nil {
-            log.Printf("Notify (slack) cancelled failed: %v", err)
-        }
-    }
+			if err := payload.Notify(repslack); err != nil {
+				log.Printf("Notify (slack) cancelled failed: %v", err)
+			}
+		}
 
-    case "completed":
+	case "completed":
 		log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
 			msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
 
@@ -950,6 +990,7 @@ func init() {
 	rootcmd.PersistentFlags().StringSliceVarP(&files, "scenarios", "s", files, "scenario file[s] to run, comma-separated, or multiple -s")
 	rootcmd.PersistentFlags().StringSliceVarP(&tags, "tags", "t", tags, "key=value labels in scenario files that are allowed to run, empty means all")
 	rootcmd.PersistentFlags().StringVar(&githubtoken, "github-token", "", "GitHub token for commit status updates")
+	rootcmd.PersistentFlags().StringVar(&preprocesshook, "pre-process-hook", preprocesshook, "executable to run before processing each scenario, with the scenario file path as argument")
 	rootcmd.AddCommand(runCmd())
 }
 
