@@ -177,12 +177,13 @@ type doScenarioInput struct {
 	OnScenarioDone func(scenario, status string)
 }
 
-func publishCancelledReport(in *doScenarioInput, scenarioFile string) {
+func publishCancelledReport(in *doScenarioInput, scenarioFile string, startedAt time.Time) {
 	if in.app == nil || in.app.rpub == nil || in.ReportPubsub == "" {
 		return
 	}
 
 	attr := make(map[string]string)
+	attr["started_at"] = startedAt.Format("2006-01-02 15:04:05")
 	if pubsub != "" {
 		attr["pubsub"] = pubsub
 	}
@@ -248,9 +249,11 @@ func isAllowed(s *Scenario) bool {
 func doScenario(in *doScenarioInput) error {
 	commitSha, _ := in.Metadata["commit_sha"].(string)
 	for _, f := range in.ScenarioFiles {
+		startedAt := time.Now().UTC()
+
 		if in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID, commitSha) {
 			log.Printf("doScenario: run_id=%s is cancelled, reporting skip for %s", in.RunID, f)
-			publishCancelledReport(in, f)
+			publishCancelledReport(in, f, startedAt)
 			continue
 		}
 
@@ -408,13 +411,11 @@ func doScenario(in *doScenarioInput) error {
 
 		if cancelledMidRun || (in.app != nil && in.RunID != "" && in.app.isRunCancelled(in.RunID, commitSha)) {
 			log.Printf("doScenario: run_id=%s was cancelled during execution of %s, reporting skip", in.RunID, f)
-			publishCancelledReport(in, f)
+			publishCancelledReport(in, f, startedAt)
 			continue
 		}
 
-		if in.ReportSlack != "" {
-			if len(s.errs) > 0 {
-				// Send failure notification to slack
+		if in.ReportSlack != "" && len(s.errs) > 0 {
 				payload := SlackMessage{
 					Attachments: []SlackAttachment{
 						{
@@ -430,25 +431,6 @@ func doScenario(in *doScenarioInput) error {
 				err = payload.Notify(in.ReportSlack)
 				if err != nil {
 					log.Printf("Notify (slack) failed: %v", err)
-				}
-			} else {
-				// Send success notification to slack
-				payload := SlackMessage{
-					Attachments: []SlackAttachment{
-						{
-							Color:     "good",
-							Title:     fmt.Sprintf("%v - success", filepath.Base(f)),
-							Text:      fmt.Sprintf("All tests passed! \nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
-							Footer:    "oops",
-							Timestamp: time.Now().Unix(),
-						},
-					},
-				}
-
-				err = payload.Notify(in.ReportSlack)
-				if err != nil {
-					log.Printf("Notify (slack) failed: %v", err)
-				}
 			}
 		}
 
@@ -462,6 +444,8 @@ func doScenario(in *doScenarioInput) error {
 				}
 
 				attr := make(map[string]string)
+				attr["started_at"] = startedAt.Format("2006-01-02 15:04:05")
+
 				if snssqs != "" {
 					attr["snssqs"] = snssqs
 				}
