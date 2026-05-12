@@ -412,9 +412,7 @@ func doScenario(in *doScenarioInput) error {
 			continue
 		}
 
-		if in.ReportSlack != "" {
-			if len(s.errs) > 0 {
-				// Send failure notification to slack
+		if in.ReportSlack != "" && len(s.errs) > 0 {
 				payload := SlackMessage{
 					Attachments: []SlackAttachment{
 						{
@@ -430,25 +428,6 @@ func doScenario(in *doScenarioInput) error {
 				err = payload.Notify(in.ReportSlack)
 				if err != nil {
 					log.Printf("Notify (slack) failed: %v", err)
-				}
-			} else {
-				// Send success notification to slack
-				payload := SlackMessage{
-					Attachments: []SlackAttachment{
-						{
-							Color:     "good",
-							Title:     fmt.Sprintf("%v - success", filepath.Base(f)),
-							Text:      fmt.Sprintf("All tests passed! \nMaintainers: %v", strings.Join(s.Maintainers, ", ")),
-							Footer:    "oops",
-							Timestamp: time.Now().Unix(),
-						},
-					},
-				}
-
-				err = payload.Notify(in.ReportSlack)
-				if err != nil {
-					log.Printf("Notify (slack) failed: %v", err)
-				}
 			}
 		}
 
