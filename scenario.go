@@ -424,6 +424,7 @@ func doScenario(in *doScenarioInput) error {
 							Text:      fmt.Sprintf("Maintainers: %v\n%v", strings.Join(s.Maintainers, ", "), s.errs),
 							Footer:    "oops",
 							Timestamp: time.Now().Unix(),
+							MrkdwnIn:  []string{"text"},
 						},
 					},
 				}
