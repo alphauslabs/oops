@@ -476,6 +476,10 @@ func doScenario(in *doScenarioInput) error {
 					}
 				}
 
+				if len(s.Maintainers) > 0 {
+					attr["maintainers"] = strings.Join(s.Maintainers, ",")
+				}
+
 				r := ReportPubsub{
 					Scenario:   f,
 					Attributes: attr,

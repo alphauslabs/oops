@@ -59,7 +59,8 @@ var (
 	spannercanceltable string
 	preprocesshook     string
 
-	verbose bool
+	verbose           bool
+	skipNotifications bool
 )
 
 type cmd struct {
@@ -105,9 +106,13 @@ type ScenarioProgressMessage struct {
 }
 
 func runE(cmd *cobra.Command, args []string) error {
+	slack := repslack
+	if skipNotifications {
+		slack = ""
+	}
 	return doScenario(&doScenarioInput{
 		ScenarioFiles: combineFilesAndDir(),
-		ReportSlack:   repslack,
+		ReportSlack:   slack,
 		ReportPubsub:  reppubsub,
 		Verbose:       verbose,
 	})
@@ -479,6 +484,7 @@ func process(ctx any, data []byte) error {
 		if hookResult.OverlayDir != "" {
 			c.Metadata["overlay_dir"] = hookResult.OverlayDir
 		}
+		log.Printf("pre-process hook result for scenario %v: overlay_dir=%v", c.Scenario, hookResult.OverlayDir)
 	}
 
 	switch c.Code {
@@ -643,7 +649,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 			log.Printf("sendApprovalStatus failed: %v", err)
 		}
 
-		if repslack != "" {
+		if repslack != "" && !skipNotifications {
 			reviewerMentions := ""
 			if msg.Reviewers != "" {
 				var mentions []string
@@ -699,7 +705,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 		); err != nil {
 			log.Printf("postCommitStatus (cancelled) failed: %v", err)
 		}
-		if repslack != "" {
+		if repslack != "" && !skipNotifications {
 			payload := SlackMessage{
 				Attachments: []SlackAttachment{
 					{
@@ -727,7 +733,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 			log.Printf("sendRepositoryDispatch failed: %v", err)
 		}
 
-		if repslack != "" {
+		if repslack != "" && !skipNotifications {
 			color := "good"
 			title := "Tests Done."
 			var text string
@@ -984,6 +990,7 @@ func init() {
 	rootcmd.PersistentFlags().StringVar(&secret, "aws-secret", os.Getenv("AWS_SECRET_ACCESS_KEY"), "AWS secret key")
 	rootcmd.PersistentFlags().StringVar(&rolearn, "aws-rolearn", os.Getenv("ROLE_ARN"), "AWS role ARN to assume")
 	rootcmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", verbose, "verbose mode")
+	rootcmd.PersistentFlags().BoolVar(&skipNotifications, "skip-notifications", false, "suppress Slack notifications from oops; use when a downstream service handles notifications")
 	rootcmd.PersistentFlags().StringVarP(&dir, "dir", "d", dir, "root directory for scenario discovery (services/*/scenarios, cloudrun/*/scenarios, cronjobs/*/scenarios, serverless/*/scenarios, microapps/*/scenarios)")
 	rootcmd.PersistentFlags().StringVar(&repslack, "report-slack", repslack, "slack url for notification")
 	rootcmd.PersistentFlags().StringVar(&reppubsub, "report-pubsub", reppubsub, "pubsub topic for notification")
