@@ -91,6 +91,8 @@ type ScenarioProgressMessage struct {
 	Data             string   `json:"data"`
 	TotalScenarios   string   `json:"total_scenarios"`
 	Code             string   `json:"code"`
+	TriggerType      string   `json:"trigger_type,omitempty"`
+	RerunMode        string   `json:"rerun_mode,omitempty"`
 	OverallStatus    string   `json:"overall_status,omitempty"`
 	FailedCount      int64    `json:"failed_count,omitempty"`
 	FailedScenarios  []string `json:"failed_scenarios,omitempty"`
@@ -604,6 +606,39 @@ func process(ctx any, data []byte) error {
 				log.Printf("Notify (slack) failed: %v", err)
 			}
 		}
+	case "rerun_started":
+		mode, _ := c.Metadata["rerun_mode"].(string)
+		rerunTotal, _ := c.Metadata["rerun_total"].(string)
+		repository, _ := c.Metadata["repository"].(string)
+		runURL, _ := c.Metadata["run_url"].(string)
+
+		log.Printf("rerun started: run_id=%s mode=%s rerun_total=%s repo=%s", c.ID, mode, rerunTotal, repository)
+
+		if repslack != "" {
+			modeLabel := rerunModeLabel(mode)
+			text := fmt.Sprintf("*Run ID:* `%s`\n*Scenarios queued:* %s", c.ID, rerunTotal)
+			if repository != "" {
+				text += fmt.Sprintf("\n*Repository:* %s", repository)
+			}
+			if runURL != "" {
+				text += fmt.Sprintf("\n\n<%s|View run>", runURL)
+			}
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color:     "#439FE0",
+						Title:     fmt.Sprintf("Rerun Started — %s", modeLabel),
+						Text:      text,
+						Footer:    fmt.Sprintf("oops • rerun • runid: %s", c.ID),
+						Timestamp: time.Now().Unix(),
+						MrkdwnIn:  []string{"text"},
+					},
+				},
+			}
+			if err := payload.Notify(repslack); err != nil {
+				log.Printf("Notify (slack) rerun_started failed: %v", err)
+			}
+		}
 	case "process":
 		log.Printf("process: %+v", c)
 		doScenario(&doScenarioInput{
@@ -618,6 +653,19 @@ func process(ctx any, data []byte) error {
 	}
 
 	return nil
+}
+
+func rerunModeLabel(mode string) string {
+	switch mode {
+	case "all":
+		return "All Scenarios"
+	case "failed":
+		return "Failed Scenarios"
+	case "specific":
+		return "Specific Scenario"
+	default:
+		return ""
+	}
 }
 
 func handleScenarioCompletion(ctx any, data []byte) error {
@@ -728,6 +776,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 		}
 
 		if repslack != "" {
+			isRerun := msg.TriggerType == "rerun"
 			color := "good"
 			title := "Tests Done."
 			var text string
@@ -752,14 +801,23 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 
 			if msg.OverallStatus == "failure" || msg.FailedCount > 0 {
 				color = "danger"
-				title = "Test Run Complete (With Failures)"
+				if isRerun {
+					title = fmt.Sprintf("Rerun Complete (With Failures) — %s", rerunModeLabel(msg.RerunMode))
+				} else {
+					title = "Test Run Complete (With Failures)"
+				}
 				var sb strings.Builder
 				sb.WriteString(header)
-				fmt.Fprintf(&sb, "*Run Summary*\nTotal: %s\nPassed: %d\nFailed: %d", total, successCount, msg.FailedCount)
-				if len(msg.FailedScenarios) > 0 {
-					sb.WriteString("\n\n*Failed scenarios:*")
-					for _, name := range msg.FailedScenarios {
-						fmt.Fprintf(&sb, "\n• %v", name)
+				if isRerun && msg.RerunMode == "specific" {
+					scenarioName := filepath.Base(msg.Scenario)
+					fmt.Fprintf(&sb, "*Scenario:* %s\n*Result:* ❌ Failed", scenarioName)
+				} else {
+					fmt.Fprintf(&sb, "*Run Summary*\nTotal: %s\nPassed: %d\nFailed: %d", total, successCount, msg.FailedCount)
+					if len(msg.FailedScenarios) > 0 {
+						sb.WriteString("\n\n*Failed scenarios:*")
+						for _, name := range msg.FailedScenarios {
+							fmt.Fprintf(&sb, "\n• %v", name)
+						}
 					}
 				}
 				if msg.RunURL != "" {
@@ -767,8 +825,18 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 				}
 				text = sb.String()
 			} else {
-				title = "Test Run Complete"
-				text = header + fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
+				if isRerun {
+					title = fmt.Sprintf("Rerun Complete — %s", rerunModeLabel(msg.RerunMode))
+					if msg.RerunMode == "specific" {
+						scenarioName := filepath.Base(msg.Scenario)
+						text = header + fmt.Sprintf("*Scenario:* %s\n*Result:* ✅ Passed", scenarioName)
+					} else {
+						text = header + fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
+					}
+				} else {
+					title = "Test Run Complete"
+					text = header + fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
+				}
 				if msg.RunURL != "" {
 					text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
 				}
