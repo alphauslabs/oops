@@ -458,7 +458,7 @@ func doScenario(in *doScenarioInput) error {
 					for _, key := range []string{
 						"pr_number", "branch", "commit_sha", "actor",
 						"trigger_type", "run_url", "repository", "workflow", "total_scenarios",
-						"rerun_row_id",
+						"rerun_row_id", "rerun_mode",
 					} {
 						if v, ok := in.Metadata[key].(string); ok && v != "" {
 							attr[key] = v

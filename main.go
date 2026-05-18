@@ -810,7 +810,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 				sb.WriteString(header)
 				if isRerun && msg.RerunMode == "specific" {
 					scenarioName := filepath.Base(msg.Scenario)
-					fmt.Fprintf(&sb, "*Scenario:* %s\n*Result:* ❌ Failed", scenarioName)
+					fmt.Fprintf(&sb, "*Scenario:* %s\n*Result:*  Failed", scenarioName)
 				} else {
 					fmt.Fprintf(&sb, "*Run Summary*\nTotal: %s\nPassed: %d\nFailed: %d", total, successCount, msg.FailedCount)
 					if len(msg.FailedScenarios) > 0 {
@@ -829,7 +829,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 					title = fmt.Sprintf("Rerun Complete — %s", rerunModeLabel(msg.RerunMode))
 					if msg.RerunMode == "specific" {
 						scenarioName := filepath.Base(msg.Scenario)
-						text = header + fmt.Sprintf("*Scenario:* %s\n*Result:* ✅ Passed", scenarioName)
+						text = header + fmt.Sprintf("*Scenario:* %s\n*Result:*  Passed", scenarioName)
 					} else {
 						text = header + fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
 					}
