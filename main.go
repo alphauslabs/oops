@@ -58,6 +58,7 @@ var (
 	spannerdb          string
 	spannercanceltable string
 	preprocesshook     string
+	skipNotif          bool
 
 	verbose bool
 )
@@ -970,6 +971,7 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringVar(&scenariopubsub, "scenario-pubsub", os.Getenv("SCENARIO_PUBSUB"), "pubsub subscription for scenario progress (e.g. oopsnext-scenarios)")
 	cmd.Flags().StringVar(&spannerdb, "spanner-db", os.Getenv("SPANNER_DB"), "Spanner DB path for cancel checks")
 	cmd.Flags().StringVar(&spannercanceltable, "spanner-cancel-table", os.Getenv("SPANNER_CANCEL_TABLE"), "Spanner table name for cancel checks")
+	cmd.Flags().BoolVar(&skipNotif, "skip-result-notif", false, "skip result Slack notification")
 	return cmd
 }
 
@@ -991,6 +993,7 @@ func init() {
 	rootcmd.PersistentFlags().StringSliceVarP(&tags, "tags", "t", tags, "key=value labels in scenario files that are allowed to run, empty means all")
 	rootcmd.PersistentFlags().StringVar(&githubtoken, "github-token", "", "GitHub token for commit status updates")
 	rootcmd.PersistentFlags().StringVar(&preprocesshook, "pre-process-hook", preprocesshook, "executable to run before processing each scenario, with the scenario file path as argument")
+	rootcmd.PersistentFlags().BoolVar(&skipNotif, "skip-result-notif", false, "skip result Slack notification")
 	rootcmd.AddCommand(runCmd())
 }
 
