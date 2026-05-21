@@ -50,6 +50,7 @@ type ReportPubsub struct {
 	Data       string            `json:"data"`
 	MessageID  string            `json:"message_id"` // Unique oops-generated tracking ID
 	RunID      string            `json:"run_id"`     // Batch run ID from the initiating workflow
+	GroupID    string            `json:"group_id"`   // Links original run + all reruns together
 }
 
 // Scenario represents a single scenario file to run.
@@ -174,6 +175,7 @@ type doScenarioInput struct {
 	Verbose        bool
 	Metadata       map[string]interface{}
 	RunID          string
+	GroupID        string
 	OnScenarioDone func(scenario, status string)
 }
 
@@ -194,6 +196,7 @@ func publishCancelledReport(in *doScenarioInput, scenarioFile string, startedAt 
 		for _, key := range []string{
 			"pr_number", "branch", "commit_sha", "actor",
 			"trigger_type", "run_url", "repository", "workflow", "total_scenarios",
+			"rerun_mode",
 		} {
 			if v, ok := in.Metadata[key].(string); ok && v != "" {
 				attr[key] = v
@@ -215,6 +218,7 @@ func publishCancelledReport(in *doScenarioInput, scenarioFile string, startedAt 
 		MessageID:  uuid.NewString(),
 		RunID:      in.RunID,
 		Attributes: attr,
+		GroupID:    in.GroupID,
 	}
 
 	if err := in.app.rpub.Publish(r.MessageID, r); err != nil {
@@ -458,6 +462,7 @@ func doScenario(in *doScenarioInput) error {
 					for _, key := range []string{
 						"pr_number", "branch", "commit_sha", "actor",
 						"trigger_type", "run_url", "repository", "workflow", "total_scenarios",
+						"rerun_mode",
 					} {
 						if v, ok := in.Metadata[key].(string); ok && v != "" {
 							attr[key] = v
@@ -483,6 +488,7 @@ func doScenario(in *doScenarioInput) error {
 					Data:       data,
 					MessageID:  uuid.NewString(),
 					RunID:      in.RunID,
+					GroupID:    in.GroupID,
 				}
 
 				err := in.app.rpub.Publish(r.MessageID, r)
