@@ -82,6 +82,9 @@ type cmd struct {
 
 	// Metadata for cancellation requests
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
+
+	// Links the original run and all its reruns together.
+	GroupID string `json:"group_id,omitempty"`
 }
 
 type ScenarioProgressMessage struct {
@@ -649,6 +652,7 @@ func process(ctx any, data []byte) error {
 			Verbose:       verbose,
 			Metadata:      c.Metadata,
 			RunID:         c.ID,
+			GroupID:       c.GroupID,
 		})
 	}
 
