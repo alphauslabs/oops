@@ -419,23 +419,23 @@ func doScenario(in *doScenarioInput) error {
 			continue
 		}
 
-		if in.ReportSlack != "" && len(s.errs) > 0 {
-				payload := SlackMessage{
-					Attachments: []SlackAttachment{
-						{
-							Color:     "danger",
-							Title:     fmt.Sprintf("%v - failure", filepath.Base(f)),
-							Text:      fmt.Sprintf("Maintainers: %v\n%v", strings.Join(s.Maintainers, ", "), s.errs),
-							Footer:    "oops",
-							Timestamp: time.Now().Unix(),
-							MrkdwnIn:  []string{"text"},
-						},
+		if in.ReportSlack != "" && !skipNotif && len(s.errs) > 0 {
+			payload := SlackMessage{
+				Attachments: []SlackAttachment{
+					{
+						Color:     "danger",
+						Title:     fmt.Sprintf("%v - failure", filepath.Base(f)),
+						Text:      fmt.Sprintf("Maintainers: %v\n%v", strings.Join(s.Maintainers, ", "), s.errs),
+						Footer:    "oops",
+						Timestamp: time.Now().Unix(),
+						MrkdwnIn:  []string{"text"},
 					},
-				}
+				},
+			}
 
-				err = payload.Notify(in.ReportSlack)
-				if err != nil {
-					log.Printf("Notify (slack) failed: %v", err)
+			err = payload.Notify(in.ReportSlack)
+			if err != nil {
+				log.Printf("Notify (slack) failed: %v", err)
 			}
 		}
 
