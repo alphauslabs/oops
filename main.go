@@ -614,7 +614,6 @@ func process(ctx any, data []byte) error {
 		mode, _ := c.Metadata["rerun_mode"].(string)
 		rerunTotal, _ := c.Metadata["rerun_total"].(string)
 		repository, _ := c.Metadata["repository"].(string)
-		runURL, _ := c.Metadata["run_url"].(string)
 
 		log.Printf("rerun started: run_id=%s mode=%s rerun_total=%s repo=%s", c.ID, mode, rerunTotal, repository)
 
@@ -623,9 +622,6 @@ func process(ctx any, data []byte) error {
 			text := fmt.Sprintf("*Run ID:* `%s`\n*Scenarios queued:* %s", c.ID, rerunTotal)
 			if repository != "" {
 				text += fmt.Sprintf("\n*Repository:* %s", repository)
-			}
-			if runURL != "" {
-				text += fmt.Sprintf("\n\n<%s|View run>", runURL)
 			}
 			payload := SlackMessage{
 				Attachments: []SlackAttachment{
@@ -737,30 +733,48 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 		log.Printf("run cancelled: run_id=%s repo=%s sha=%s pr=%s",
 			msg.RunID, msg.Repository, msg.CommitSHA, msg.PRNumber)
 
-		if msg.CommitSHA == "" || msg.Repository == "" {
+		if msg.CommitSHA != "" && msg.Repository != "" {
+			if err := postCommitStatus(
+				githubtoken,
+				msg.CommitSHA,
+				msg.Repository,
+				msg.RunURL,
+				"failure",
+				fmt.Sprintf("Test run cancelled"),
+			); err != nil {
+				log.Printf("postCommitStatus (cancelled) failed: %v", err)
+			}
+		} else {
 			log.Printf("cancelled: missing commit_sha or repository, skipping github status update")
-			return nil
 		}
 
-		if err := postCommitStatus(
-			githubtoken,
-			msg.CommitSHA,
-			msg.Repository,
-			msg.RunURL,
-			"failure",
-			fmt.Sprintf("Test run cancelled"),
-		); err != nil {
-			log.Printf("postCommitStatus (cancelled) failed: %v", err)
-		}
 		if repslack != "" {
+			isRerun := msg.TriggerType == "rerun"
+			title := "Test Run Cancelled"
+			if isRerun {
+				title = fmt.Sprintf("Rerun Cancelled — %s", rerunModeLabel(msg.RerunMode))
+			}
+			var text string
+			if msg.PRNumber != "" && msg.Repository != "" {
+				text = fmt.Sprintf("*PR #%s* in `%s` was closed.\nIn-progress test run `%s` has been cancelled.",
+					msg.PRNumber, msg.Repository, msg.RunID)
+			} else {
+				text = fmt.Sprintf("*Run ID:* `%s` has been cancelled.", msg.RunID)
+			}
+			if msg.RunURL != "" && !isRerun {
+				text += fmt.Sprintf("\n<%s|View workflow>", msg.RunURL)
+			}
+			footer := fmt.Sprintf("oops • pr: %s • sha: %.7s", msg.PRNumber, msg.CommitSHA)
+			if msg.PRNumber == "" && msg.CommitSHA == "" {
+				footer = "oops • rerun"
+			}
 			payload := SlackMessage{
 				Attachments: []SlackAttachment{
 					{
-						Color: "warning",
-						Title: "Test Run Cancelled",
-						Text: fmt.Sprintf("*PR #%s* in `%s` was closed.\nIn-progress test run `%s` has been cancelled.\n<%s|View workflow>",
-							msg.PRNumber, msg.Repository, msg.RunID, msg.RunURL),
-						Footer:    fmt.Sprintf("oops • pr: %s • sha: %.7s", msg.PRNumber, msg.CommitSHA),
+						Color:     "warning",
+						Title:     title,
+						Text:      text,
+						Footer:    footer,
 						Timestamp: time.Now().Unix(),
 						MrkdwnIn:  []string{"text"},
 					},
@@ -825,7 +839,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 						}
 					}
 				}
-				if msg.RunURL != "" {
+				if msg.RunURL != "" && !isRerun {
 					fmt.Fprintf(&sb, "\n\n<%s|View run>", msg.RunURL)
 				}
 				text = sb.String()
@@ -842,7 +856,7 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 					title = "Test Run Complete"
 					text = header + fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
 				}
-				if msg.RunURL != "" {
+				if msg.RunURL != "" && !isRerun {
 					text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
 				}
 			}
@@ -853,7 +867,12 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 						Color:     color,
 						Title:     title,
 						Text:      text,
-						Footer:    fmt.Sprintf("oops • runid: %v", msg.RunID),
+						Footer: func() string {
+							if isRerun {
+								return "oops • rerun"
+							}
+							return fmt.Sprintf("oops • runid: %v", msg.RunID)
+						}(),
 						Timestamp: time.Now().Unix(),
 						MrkdwnIn:  []string{"text"},
 					},
