@@ -88,28 +88,6 @@ type cmd struct {
 	GroupID string `json:"group_id,omitempty"`
 }
 
-type ScenarioProgressMessage struct {
-	Status           string   `json:"status"`
-	Scenario         string   `json:"scenario"`
-	RunID            string   `json:"run_id"`
-	Data             string   `json:"data"`
-	TotalScenarios   string   `json:"total_scenarios"`
-	Code             string   `json:"code"`
-	TriggerType      string   `json:"trigger_type,omitempty"`
-	RerunMode        string   `json:"rerun_mode,omitempty"`
-	OverallStatus    string   `json:"overall_status,omitempty"`
-	FailedCount      int64    `json:"failed_count,omitempty"`
-	FailedScenarios  []string `json:"failed_scenarios,omitempty"`
-	CommitSHA        string   `json:"commit_sha,omitempty"`
-	Repository       string   `json:"repository,omitempty"`
-	RunURL           string   `json:"run_url,omitempty"`
-	MissingTestsInPR bool     `json:"missing_tests_in_pr,omitempty"`
-	ShouldRunTests   bool     `json:"should_run_tests,omitempty"`
-	PRNumber         string   `json:"pr_number,omitempty"`
-	ApprovalCount    int      `json:"approval_count,omitempty"`
-	Reviewers        string   `json:"reviewers,omitempty"`
-}
-
 func runE(cmd *cobra.Command, args []string) error {
 	return doScenario(&doScenarioInput{
 		ScenarioFiles: combineFilesAndDir(),
@@ -454,6 +432,72 @@ func (a *appctx) isRunCancelled(runID string, commitSha string) bool {
 	return found
 }
 
+func handleScenarioCompletion(ctx any, data []byte) error {
+	var msg ScenarioProgressMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		log.Printf("handleScenarioCompletion: unmarshal failed: %v", err)
+		return err
+	}
+
+	log.Printf("scenario progress: run_id=%s code=%s progress=%s", msg.RunID, msg.Code, msg.TotalScenarios)
+
+	switch msg.Code {
+	case "approve":
+		log.Printf("received approve event: repo=%s sha=%s approvals=%d reviewers=%s",
+			msg.Repository, msg.CommitSHA, msg.ApprovalCount, msg.Reviewers)
+
+		if msg.CommitSHA == "" || msg.Repository == "" {
+			log.Printf("approve: missing commit_sha or repository, skipping")
+			return nil
+		}
+
+		if err := sendApprovalStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.PRNumber, msg.RunURL, msg.ApprovalCount, msg.Reviewers); err != nil {
+			log.Printf("sendApprovalStatus failed: %v", err)
+		}
+
+		if repslack != "" {
+			notifyApproval(msg, repslack)
+		}
+
+	case "cancelled":
+		log.Printf("run cancelled: run_id=%s repo=%s sha=%s pr=%s",
+			msg.RunID, msg.Repository, msg.CommitSHA, msg.PRNumber)
+
+		if msg.CommitSHA != "" && msg.Repository != "" {
+			if err := postCommitStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.RunURL, "failure", "Test run cancelled"); err != nil {
+				log.Printf("postCommitStatus (cancelled) failed: %v", err)
+			}
+		} else {
+			log.Printf("cancelled: missing commit_sha or repository, skipping github status update")
+		}
+
+		if repslack != "" {
+			notifyCancelled(msg, repslack)
+		}
+
+	case "completed":
+		log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
+			msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
+
+		if err := sendRepositoryDispatch(githubtoken, &msg); err != nil {
+			log.Printf("sendRepositoryDispatch failed: %v", err)
+		}
+
+		if repslack == "" {
+			break
+		}
+		if msg.TriggerType == "rerun" {
+			notifyRerunComplete(msg, repslack)
+		} else if !skipNotif {
+			notifyRunComplete(msg, repslack)
+		}
+
+	default:
+	}
+
+	return nil
+}
+
 // Our message processing callback.
 func process(ctx any, data []byte) error {
 	app := ctx.(*appctx)
@@ -553,25 +597,8 @@ func process(ctx any, data []byte) error {
 		}
 
 		host, _ := os.Hostname()
-
-		// Send to slack, if any.
 		if repslack != "" {
-			payload := SlackMessage{
-				Attachments: []SlackAttachment{
-					{
-						Color:     "good",
-						Title:     "start tests",
-						Text:      fmt.Sprintf("from %v through %v", host, dist),
-						Footer:    "oops",
-						Timestamp: time.Now().Unix(),
-					},
-				},
-			}
-
-			err = payload.Notify(repslack)
-			if err != nil {
-				log.Printf("Notify (slack) failed: %v", err)
-			}
+			notifyRunStarted("start tests", host, dist, repslack)
 		}
 	case "start_all":
 		log.Printf("received start_all command with tags: %v", c.Tags)
@@ -592,25 +619,8 @@ func process(ctx any, data []byte) error {
 		}
 
 		host, _ := os.Hostname()
-
-		// Send to slack, if any.
 		if repslack != "" {
-			payload := SlackMessage{
-				Attachments: []SlackAttachment{
-					{
-						Color:     "good",
-						Title:     "start all tests",
-						Text:      fmt.Sprintf("from %v through %v", host, dist),
-						Footer:    "oops",
-						Timestamp: time.Now().Unix(),
-					},
-				},
-			}
-
-			err = payload.Notify(repslack)
-			if err != nil {
-				log.Printf("Notify (slack) failed: %v", err)
-			}
+			notifyRunStarted("start all tests", host, dist, repslack)
 		}
 	case "rerun_started":
 		mode, _ := c.Metadata["rerun_mode"].(string)
@@ -620,26 +630,7 @@ func process(ctx any, data []byte) error {
 		log.Printf("rerun started: run_id=%s mode=%s rerun_total=%s repo=%s", c.ID, mode, rerunTotal, repository)
 
 		if repslack != "" {
-			modeLabel := rerunModeLabel(mode)
-			text := fmt.Sprintf("*Run ID:* `%s`\n*Scenarios queued:* %s", c.ID, rerunTotal)
-			if repository != "" {
-				text += fmt.Sprintf("\n*Repository:* %s", repository)
-			}
-			payload := SlackMessage{
-				Attachments: []SlackAttachment{
-					{
-						Color:     "#439FE0",
-						Title:     fmt.Sprintf("Rerun Started — %s", modeLabel),
-						Text:      text,
-						Footer:    fmt.Sprintf("oops • rerun • runid: %s", c.ID),
-						Timestamp: time.Now().Unix(),
-						MrkdwnIn:  []string{"text"},
-					},
-				},
-			}
-			if err := payload.Notify(repslack); err != nil {
-				log.Printf("Notify (slack) rerun_started failed: %v", err)
-			}
+			notifyRerunStarted(c.ID, mode, rerunTotal, repository, repslack)
 		}
 	case "process":
 		log.Printf("process: %+v", c)
@@ -653,240 +644,6 @@ func process(ctx any, data []byte) error {
 			RunID:         c.ID,
 			GroupID:       c.GroupID,
 		})
-	}
-
-	return nil
-}
-
-func rerunModeLabel(mode string) string {
-	switch mode {
-	case "all":
-		return "All Scenarios"
-	case "failed":
-		return "Failed Scenarios"
-	case "specific":
-		return "Specific Scenario"
-	default:
-		return ""
-	}
-}
-
-func handleScenarioCompletion(ctx any, data []byte) error {
-	var msg ScenarioProgressMessage
-	if err := json.Unmarshal(data, &msg); err != nil {
-		log.Printf("handleScenarioCompletion: unmarshal failed: %v", err)
-		return err
-	}
-
-	log.Printf("scenario progress: run_id=%s code=%s progress=%s", msg.RunID, msg.Code, msg.TotalScenarios)
-
-	switch msg.Code {
-	case "approve":
-		log.Printf("received approve event: repo=%s sha=%s approvals=%d reviewers=%s",
-			msg.Repository, msg.CommitSHA, msg.ApprovalCount, msg.Reviewers)
-
-		if msg.CommitSHA == "" || msg.Repository == "" {
-			log.Printf("approve: missing commit_sha or repository, skipping")
-			return nil
-		}
-
-		if err := sendApprovalStatus(githubtoken, msg.CommitSHA, msg.Repository, msg.PRNumber, msg.RunURL, msg.ApprovalCount, msg.Reviewers); err != nil {
-			log.Printf("sendApprovalStatus failed: %v", err)
-		}
-
-		if repslack != "" {
-			reviewerMentions := ""
-			if msg.Reviewers != "" {
-				var mentions []string
-				for _, r := range strings.Split(msg.Reviewers, ",") {
-					mentions = append(mentions, "@"+strings.TrimSpace(r))
-				}
-				reviewerMentions = strings.Join(mentions, " ")
-			}
-
-			color := "good"
-			title := "PR Approved"
-			text := fmt.Sprintf("*Repository:* %s\n*PR:* #%s\n*Reviewers:* %s\n*Approval Count:* %d",
-				msg.Repository, msg.PRNumber, reviewerMentions, msg.ApprovalCount)
-
-			if msg.RunURL != "" {
-				text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
-			}
-
-			payload := SlackMessage{
-				Attachments: []SlackAttachment{
-					{
-						Color:     color,
-						Title:     title,
-						Text:      text,
-						Footer:    "oops • approval",
-						Timestamp: time.Now().Unix(),
-						MrkdwnIn:  []string{"text"},
-					},
-				},
-			}
-
-			if err := payload.Notify(repslack); err != nil {
-				log.Printf("Notify (slack) failed: %v", err)
-			}
-		}
-
-	case "cancelled":
-		log.Printf("run cancelled: run_id=%s repo=%s sha=%s pr=%s",
-			msg.RunID, msg.Repository, msg.CommitSHA, msg.PRNumber)
-
-		if msg.CommitSHA != "" && msg.Repository != "" {
-			if err := postCommitStatus(
-				githubtoken,
-				msg.CommitSHA,
-				msg.Repository,
-				msg.RunURL,
-				"failure",
-				fmt.Sprintf("Test run cancelled"),
-			); err != nil {
-				log.Printf("postCommitStatus (cancelled) failed: %v", err)
-			}
-		} else {
-			log.Printf("cancelled: missing commit_sha or repository, skipping github status update")
-		}
-
-		if repslack != "" {
-			isRerun := msg.TriggerType == "rerun"
-			title := "Test Run Cancelled"
-			if isRerun {
-				title = fmt.Sprintf("Rerun Cancelled — %s", rerunModeLabel(msg.RerunMode))
-			}
-			var text string
-			if msg.PRNumber != "" && msg.Repository != "" {
-				text = fmt.Sprintf("*PR #%s* in `%s` was closed.\nIn-progress test run `%s` has been cancelled.",
-					msg.PRNumber, msg.Repository, msg.RunID)
-			} else {
-				text = fmt.Sprintf("*Run ID:* `%s` has been cancelled.", msg.RunID)
-			}
-			if msg.RunURL != "" && !isRerun {
-				text += fmt.Sprintf("\n<%s|View workflow>", msg.RunURL)
-			}
-			footer := fmt.Sprintf("oops • pr: %s • sha: %.7s", msg.PRNumber, msg.CommitSHA)
-			if msg.PRNumber == "" && msg.CommitSHA == "" {
-				footer = "oops • rerun"
-			}
-			payload := SlackMessage{
-				Attachments: []SlackAttachment{
-					{
-						Color:     "warning",
-						Title:     title,
-						Text:      text,
-						Footer:    footer,
-						Timestamp: time.Now().Unix(),
-						MrkdwnIn:  []string{"text"},
-					},
-				},
-			}
-
-			if err := payload.Notify(repslack); err != nil {
-				log.Printf("Notify (slack) cancelled failed: %v", err)
-			}
-		}
-
-	case "completed":
-		log.Printf("run completed: run_id=%s overall_status=%s failed=%d repo=%s sha=%s",
-			msg.RunID, msg.OverallStatus, msg.FailedCount, msg.Repository, msg.CommitSHA)
-
-		if err := sendRepositoryDispatch(githubtoken, &msg); err != nil {
-			log.Printf("sendRepositoryDispatch failed: %v", err)
-		}
-
-		if repslack != "" {
-			isRerun := msg.TriggerType == "rerun"
-			color := "good"
-			title := "Tests Done."
-			var text string
-
-			parts := strings.SplitN(msg.TotalScenarios, "/", 2)
-			total := parts[len(parts)-1]
-			successCount := int64(0)
-			if len(parts) == 2 {
-				var t int64
-				fmt.Sscanf(parts[1], "%d", &t)
-				successCount = t - msg.FailedCount
-			}
-
-			env := "dev"
-			if strings.Contains(pubsub, "prod") {
-				env = "prod"
-			} else if strings.Contains(pubsub, "next") {
-				env = "next"
-			}
-
-			header := fmt.Sprintf("*Environment:* %s\n", env)
-
-			if msg.OverallStatus == "failure" || msg.FailedCount > 0 {
-				color = "danger"
-				if isRerun {
-					title = fmt.Sprintf("Rerun Complete (With Failures) — %s", rerunModeLabel(msg.RerunMode))
-				} else {
-					title = "Test Run Complete (With Failures)"
-				}
-				var sb strings.Builder
-				sb.WriteString(header)
-				if isRerun && msg.RerunMode == "specific" {
-					scenarioName := filepath.Base(msg.Scenario)
-					fmt.Fprintf(&sb, "*Scenario:* %s\n*Result:*  Failed", scenarioName)
-				} else {
-					fmt.Fprintf(&sb, "*Run Summary*\nTotal: %s\nPassed: %d\nFailed: %d", total, successCount, msg.FailedCount)
-					if len(msg.FailedScenarios) > 0 {
-						sb.WriteString("\n\n*Failed scenarios:*")
-						for _, name := range msg.FailedScenarios {
-							fmt.Fprintf(&sb, "\n• %v", name)
-						}
-					}
-				}
-				if msg.RunURL != "" && !isRerun {
-					fmt.Fprintf(&sb, "\n\n<%s|View run>", msg.RunURL)
-				}
-				text = sb.String()
-			} else {
-				if isRerun {
-					title = fmt.Sprintf("Rerun Complete — %s", rerunModeLabel(msg.RerunMode))
-					if msg.RerunMode == "specific" {
-						scenarioName := filepath.Base(msg.Scenario)
-						text = header + fmt.Sprintf("*Scenario:* %s\n*Result:*  Passed", scenarioName)
-					} else {
-						text = header + fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
-					}
-				} else {
-					title = "Test Run Complete"
-					text = header + fmt.Sprintf("*Run Summary*\nTotal: %s\nPassed: %s\nFailed: 0", total, total)
-				}
-				if msg.RunURL != "" && !isRerun {
-					text += fmt.Sprintf("\n\n<%s|View run>", msg.RunURL)
-				}
-			}
-
-			payload := SlackMessage{
-				Attachments: []SlackAttachment{
-					{
-						Color:     color,
-						Title:     title,
-						Text:      text,
-						Footer: func() string {
-							if isRerun {
-								return "oops • rerun"
-							}
-							return fmt.Sprintf("oops • runid: %v", msg.RunID)
-						}(),
-						Timestamp: time.Now().Unix(),
-						MrkdwnIn:  []string{"text"},
-					},
-				},
-			}
-
-			if err := payload.Notify(repslack); err != nil {
-				log.Printf("Notify (slack) failed: %v", err)
-			}
-		}
-
-	default:
 	}
 
 	return nil
