@@ -429,15 +429,21 @@ func (a *appctx) isRunCancelled(runID string, commitSha string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	stmt := spanner.Statement{
-		SQL: fmt.Sprintf(`SELECT run_id FROM %s 
-			WHERE (run_id = @run_id OR commit_sha = @commit_sha)
-				AND status = 'closed'
-			LIMIT 1`, spannercanceltable),
-		Params: map[string]interface{}{
-			"run_id":     runID,
-			"commit_sha": commitSha,
-		},
+	var stmt spanner.Statement
+	if runID != "" {
+		stmt = spanner.Statement{
+			SQL: fmt.Sprintf(`SELECT run_id FROM %s WHERE run_id = @run_id AND status = 'closed' LIMIT 1`, spannercanceltable),
+			Params: map[string]interface{}{
+				"run_id": runID,
+			},
+		}
+	} else {
+		stmt = spanner.Statement{
+			SQL: fmt.Sprintf(`SELECT run_id FROM %s WHERE commit_sha = @commit_sha AND status = 'closed' LIMIT 1`, spannercanceltable),
+			Params: map[string]interface{}{
+				"commit_sha": commitSha,
+			},
+		}
 	}
 
 	found := false
@@ -445,10 +451,6 @@ func (a *appctx) isRunCancelled(runID string, commitSha string) bool {
 		found = true
 		return nil
 	})
-	if found {
-		return true
-	}
-
 	return found
 }
 
