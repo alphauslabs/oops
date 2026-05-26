@@ -196,7 +196,7 @@ func publishCancelledReport(in *doScenarioInput, scenarioFile string, startedAt 
 		for _, key := range []string{
 			"pr_number", "branch", "commit_sha", "actor",
 			"trigger_type", "run_url", "repository", "workflow", "total_scenarios",
-			"rerun_mode",
+			"rerun_mode", "pr_title", "commit_message",
 		} {
 			if v, ok := in.Metadata[key].(string); ok && v != "" {
 				attr[key] = v
@@ -462,7 +462,7 @@ func doScenario(in *doScenarioInput) error {
 					for _, key := range []string{
 						"pr_number", "branch", "commit_sha", "actor",
 						"trigger_type", "run_url", "repository", "workflow", "total_scenarios",
-						"rerun_mode",
+						"rerun_mode", "pr_title", "commit_message",
 					} {
 						if v, ok := in.Metadata[key].(string); ok && v != "" {
 							attr[key] = v
