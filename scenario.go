@@ -451,6 +451,10 @@ func doScenario(in *doScenarioInput) error {
 				attr := make(map[string]string)
 				attr["started_at"] = startedAt.Format("2006-01-02 15:04:05")
 
+				if len(s.Maintainers) > 0 {
+					attr["maintainers"] = strings.Join(s.Maintainers, ",")
+				}
+
 				if snssqs != "" {
 					attr["snssqs"] = snssqs
 				}
