@@ -105,11 +105,11 @@ func notifyCancelled(msg ScenarioProgressMessage, webhook string) {
 	}
 
 	var text string
-	if msg.PRNumber != "" && msg.Repository != "" {
+	if !isRerun && msg.PRNumber != "" && msg.Repository != "" {
 		text = fmt.Sprintf("*PR #%s* in `%s` was closed.\nIn-progress test run `%s` has been cancelled.",
 			msg.PRNumber, msg.Repository, msg.RunID)
 	} else {
-		text = fmt.Sprintf("*Run ID:* `%s` has been cancelled.", msg.RunID)
+		text = fmt.Sprintf("In-progress test run `%s` has been cancelled.", msg.RunID)
 	}
 	if msg.RunURL != "" && !isRerun {
 		text += fmt.Sprintf("\n<%s|View workflow>", msg.RunURL)
