@@ -598,7 +598,7 @@ func process(ctx any, data []byte) error {
 
 		host, _ := os.Hostname()
 		if repslack != "" {
-			notifyRunStarted("start tests", host, dist, repslack)
+			notifyRunStarted("Start tests", host, dist, c.Metadata["trigger_type"].(string), repslack, c.Tags)
 		}
 	case "start_all":
 		log.Printf("received start_all command with tags: %v", c.Tags)
@@ -620,7 +620,7 @@ func process(ctx any, data []byte) error {
 
 		host, _ := os.Hostname()
 		if repslack != "" {
-			notifyRunStarted("start all tests", host, dist, repslack)
+			notifyRunStarted("Start all tests", host, dist, c.Metadata["trigger_type"].(string), repslack, c.Tags)
 		}
 	case "rerun_started":
 		mode, _ := c.Metadata["rerun_mode"].(string)
