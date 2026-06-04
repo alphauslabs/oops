@@ -513,6 +513,12 @@ func process(ctx any, data []byte) error {
 
 	if preprocesshook != "" {
 		log.Printf("Running pre-process hook %v for scenario %v", preprocesshook, c.Scenario)
+
+		// Remember the old overlay_dir before the hook potentially generates a new one.
+		// This is used below to remap stale overlay scenario paths (e.g. from a rerun
+		// where the original /tmp/overlay-... directory no longer exists).
+		oldOverlayDir, _ := c.Metadata["overlay_dir"].(string)
+
 		hookInput, _ := json.Marshal(c)
 		hookOutput, err := exec.Command(preprocesshook, string(hookInput)).Output()
 		if err != nil {
@@ -529,6 +535,22 @@ func process(ctx any, data []byte) error {
 		}
 
 		if hookResult.OverlayDir != "" {
+			// If the scenario path still points at the OLD (stale) overlay directory,
+			// remap it to the freshly generated overlay so the file can actually be read.
+			// This happens on reruns: the process message carries a /tmp/overlay-<old>/...
+			// path that was persisted in Spanner but has since been cleaned up.
+			if oldOverlayDir != "" && strings.HasPrefix(c.Scenario, oldOverlayDir) {
+				rel, relErr := filepath.Rel(oldOverlayDir, c.Scenario)
+				if relErr == nil {
+					newPath := filepath.Join(hookResult.OverlayDir, rel)
+					if _, statErr := os.Stat(newPath); statErr == nil {
+						log.Printf("pre-process hook: remapped stale overlay path %v -> %v", c.Scenario, newPath)
+						c.Scenario = newPath
+					} else {
+						log.Printf("pre-process hook: remapped path %v does not exist in new overlay, keeping original", newPath)
+					}
+				}
+			}
 			c.Metadata["overlay_dir"] = hookResult.OverlayDir
 		}
 	}
