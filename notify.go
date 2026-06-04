@@ -30,12 +30,21 @@ type ScenarioProgressMessage struct {
 	Reviewers        string   `json:"reviewers,omitempty"`
 }
 
-func notifyRunStarted(title, host, dist, webhook string) {
+func notifyRunStarted(title, host, dist, trigger, webhook string, tags []string) {
+	var text strings.Builder
+	fmt.Fprintf(&text, "from %v through %v\n", host, dist)
+	if trigger != "" {
+		fmt.Fprintf(&text, "*Trigger type:* %v\n", trigger)
+	}
+	if len(tags) > 0 {
+		fmt.Fprintf(&text, "*Applied tags:* %v\n", strings.Join(tags, ", "))
+	}
+
 	payload := SlackMessage{
 		Attachments: []SlackAttachment{{
 			Color:     "good",
 			Title:     title,
-			Text:      fmt.Sprintf("from %v through %v", host, dist),
+			Text:      text.String(),
 			Footer:    "oops",
 			Timestamp: time.Now().Unix(),
 		}},
