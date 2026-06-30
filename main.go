@@ -131,10 +131,12 @@ func findScenarioFiles(root string) []string {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasSuffix(path, ".yaml") && strings.Contains(path, "/scenarios/") {
+		if !info.IsDir() && strings.HasSuffix(path, ".yaml") {
 			abs, _ := filepath.Abs(path)
-			log.Printf("input: %v", abs)
-			out = append(out, abs)
+			if strings.Contains(abs, "/scenarios/") {
+				log.Printf("input: %v", abs)
+				out = append(out, abs)
+			}
 		}
 		return nil
 	})
