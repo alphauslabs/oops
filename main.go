@@ -273,7 +273,7 @@ func filterScenariosByAffectedServices(files []string, affectedServices []string
 	return out
 }
 
-func distributePubsub(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}, forceAll bool) bool {
+func distributePubsub(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}, forceAll bool) int {
 	id := runID
 	if metadata == nil {
 		metadata = make(map[string]interface{})
@@ -283,7 +283,7 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 		affectedServices := extractAffectedServices(metadata)
 		if len(affectedServices) == 0 {
 			log.Printf("no affected services in metadata, skipping distribution")
-			return false
+			return 0
 		}
 
 		log.Printf("affected services from metadata: %v", affectedServices)
@@ -318,10 +318,10 @@ func distributePubsub(app *appctx, runID string, tagFilters []string, metadata m
 			continue
 		}
 	}
-	return true
+	return len(filtered)
 }
 
-func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}, forceAll bool) bool {
+func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[string]interface{}, forceAll bool) int {
 	sess, _ := session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(key, secret, ""),
@@ -344,7 +344,7 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 		affectedServices := extractAffectedServices(metadata)
 		if len(affectedServices) == 0 {
 			log.Printf("no affected services in metadata, skipping distribution")
-			return false
+			return 0
 		}
 
 		log.Printf("affected services from metadata: %v", affectedServices)
@@ -386,7 +386,7 @@ func distributeSQS(app *appctx, runID string, tagFilters []string, metadata map[
 			continue
 		}
 	}
-	return true
+	return len(filtered)
 }
 
 type appctx struct {
@@ -432,6 +432,44 @@ func (a *appctx) isRunCancelled(runID string, commitSha string) bool {
 		return nil
 	})
 	return found
+}
+
+func reportEmptyRun(app *appctx, runID string, metadata map[string]interface{}) {
+	if app == nil || app.rpub == nil {
+		log.Printf("reportEmptyRun: report-pubsub not configured, cannot signal empty run_id=%s", runID)
+		return
+	}
+
+	attr := map[string]string{"total_scenarios": "0"}
+	if metadata != nil {
+		for _, key := range []string{
+			"pr_number", "branch", "commit_sha", "actor",
+			"trigger_type", "run_url", "repository", "workflow",
+		} {
+			if v, ok := metadata[key].(string); ok && v != "" {
+				attr[key] = v
+			}
+		}
+		if ta, ok := metadata["test_analysis"].(map[string]interface{}); ok {
+			for _, key := range []string{"missing_tests_in_pr", "should_run_tests"} {
+				if v, ok := ta[key].(bool); ok {
+					attr[key] = fmt.Sprintf("%v", v)
+				}
+			}
+		}
+	}
+
+	log.Printf("no scenarios matched for run_id=%s, reporting empty run", runID)
+
+	r := ReportPubsub{
+		Attributes: attr,
+		MessageID:  uniuri.NewLen(10),
+		RunID:      runID,
+	}
+
+	if err := app.rpub.Publish(r.MessageID, r); err != nil {
+		log.Printf("reportEmptyRun: publish failed for run_id=%s: %v", runID, err)
+	}
 }
 
 func handleScenarioCompletion(ctx any, data []byte) error {
@@ -582,19 +620,19 @@ func process(ctx any, data []byte) error {
 			break
 		}
 
-		var distributed bool
+		var count int
 		var dist string
 		switch {
 		case pubsub != "":
-			distributed = distributePubsub(app, c.ID, c.Tags, c.Metadata, false)
+			count = distributePubsub(app, c.ID, c.Tags, c.Metadata, false)
 			dist = fmt.Sprintf("pubsub=%v", pubsub)
 		case snssqs != "":
-			distributed = distributeSQS(app, c.ID, c.Tags, c.Metadata, false)
+			count = distributeSQS(app, c.ID, c.Tags, c.Metadata, false)
 			dist = fmt.Sprintf("sns/sqs=%v", snssqs)
 		}
 
-		if !distributed {
-			log.Printf("no scenarios distributed, skipping slack notification")
+		if count == 0 {
+			reportEmptyRun(app, c.ID, c.Metadata)
 			break
 		}
 
@@ -604,19 +642,19 @@ func process(ctx any, data []byte) error {
 		}
 	case "start_all":
 		log.Printf("received start_all command with tags: %v", c.Tags)
-		var distributed bool
+		var count int
 		var dist string
 		switch {
 		case pubsub != "":
-			distributed = distributePubsub(app, c.ID, c.Tags, c.Metadata, true)
+			count = distributePubsub(app, c.ID, c.Tags, c.Metadata, true)
 			dist = fmt.Sprintf("pubsub=%v", pubsub)
 		case snssqs != "":
-			distributed = distributeSQS(app, c.ID, c.Tags, c.Metadata, true)
+			count = distributeSQS(app, c.ID, c.Tags, c.Metadata, true)
 			dist = fmt.Sprintf("sns/sqs=%v", snssqs)
 		}
 
-		if !distributed {
-			log.Printf("no scenarios distributed, skipping slack notification")
+		if count == 0 {
+			reportEmptyRun(app, c.ID, c.Metadata)
 			break
 		}
 
