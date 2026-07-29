@@ -485,12 +485,12 @@ func handleScenarioCompletion(ctx any, data []byte) error {
 			log.Printf("sendRepositoryDispatch failed: %v", err)
 		}
 
-		if repslack == "" {
+		if repslack == "" || skipNotif {
 			break
 		}
 		if msg.TriggerType == "rerun" {
 			notifyRerunComplete(msg, repslack)
-		} else if !skipNotif {
+		} else {
 			notifyRunComplete(msg, repslack)
 		}
 
